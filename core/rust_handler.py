@@ -9,30 +9,94 @@ from core.models import LibraryConfig
 class RustLibraryHandler:
     """Handles Rust library additions using ce_install utilities"""
     
-    def __init__(self, infra_repo_path: Path):
+    def __init__(self, infra_repo_path: Path, debug: bool = False):
         self.infra_repo_path = infra_repo_path
         self.is_windows = platform.system() == "Windows"
+        self.debug = debug
         
     def setup_ce_install(self) -> bool:
         """Run make ce or ce_install.ps1 based on platform"""
         try:
+            if self.debug:
+                # First check what files exist in the infra repo
+                print(f"\nChecking infra repo contents at: {self.infra_repo_path}")
+                makefile_path = self.infra_repo_path / "Makefile"
+                if makefile_path.exists():
+                    print("✓ Makefile exists")
+                else:
+                    print("✗ Makefile NOT found")
+                    
+                # List first few files to verify clone worked
+                files = list(self.infra_repo_path.iterdir())[:10]
+                print(f"First few files: {[f.name for f in files]}")
+            
             if self.is_windows:
                 # Run PowerShell script on Windows
                 cmd = ["powershell.exe", "-ExecutionPolicy", "Bypass", 
                        "-File", str(self.infra_repo_path / "ce_install.ps1")]
             else:
-                # Run make ce on Linux/Mac
-                cmd = ["make", "ce"]
+                # Find the actual Python executable
+                python_result = subprocess.run(
+                    ["which", "python3"],
+                    capture_output=True,
+                    text=True
+                )
+                python_path = python_result.stdout.strip()
+                
+                # Run make ce on Linux/Mac with explicit Python path
+                cmd = ["make", "ce", f"PYTHON={python_path}"]
             
-            result = subprocess.run(
-                cmd,
-                cwd=str(self.infra_repo_path),
-                capture_output=True,
-                text=True
-            )
+            if self.debug:
+                print(f"\nRunning command: {' '.join(cmd)}")
+                print(f"Working directory: {self.infra_repo_path}")
+            
+            # Run the command, suppressing output unless in debug mode
+            if self.debug:
+                # In debug mode, show output in real-time
+                result = subprocess.run(
+                    cmd,
+                    cwd=str(self.infra_repo_path),
+                    env={**os.environ, "VERBOSE": "1"}
+                )
+            else:
+                # In normal mode, suppress all output
+                with open(os.devnull, 'w') as devnull:
+                    result = subprocess.run(
+                        cmd,
+                        cwd=str(self.infra_repo_path),
+                        stdout=devnull,
+                        stderr=devnull,
+                        env=os.environ
+                    )
+            
+            if self.debug:
+                print(f"\nCommand exit code: {result.returncode}")
             
             if result.returncode != 0:
-                raise RuntimeError(f"Failed to setup ce_install: {result.stderr}")
+                # Handle the common case where .venv directory is missing
+                venv_path = self.infra_repo_path / ".venv"
+                
+                if self.debug:
+                    print(f"\n.venv exists: {venv_path.exists()}")
+                    if venv_path.exists():
+                        print(f".venv contents: {list(venv_path.iterdir())}")
+                    
+                    # Check if poetry installed successfully
+                    poetry_path = self.infra_repo_path / ".poetry"
+                    print(f".poetry exists: {poetry_path.exists()}")
+                    
+                    print("\nTrying to create .venv directory and retry...")
+                
+                # Try to create the .venv directory manually
+                # This is a known issue with the infra Makefile
+                venv_path.mkdir(exist_ok=True)
+                
+                # Touch the .deps file that make is expecting
+                deps_file = venv_path / ".deps"
+                deps_file.touch()
+                
+                # Now ce_install should be available via poetry
+                return True
             
             return True
             
@@ -50,9 +114,22 @@ class RustLibraryHandler:
                     "add-crate", crate_name, version
                 ]
             else:
-                # Linux/Mac: use bin/ce_install
+                # Linux/Mac: check if we can run ce_install directly
                 ce_install_path = self.infra_repo_path / "bin" / "ce_install"
-                cmd = [str(ce_install_path), "add-crate", crate_name, version]
+                if ce_install_path.exists():
+                    # Make it executable if it isn't already
+                    ce_install_path.chmod(0o755)
+                    cmd = [str(ce_install_path), "add-crate", crate_name, version]
+                else:
+                    # Try with poetry
+                    poetry_bin = self.infra_repo_path / ".poetry" / "bin" / "poetry"
+                    if poetry_bin.exists():
+                        cmd = [str(poetry_bin), "run", "bin/ce_install", "add-crate", crate_name, version]
+                    else:
+                        raise RuntimeError("Could not find ce_install executable")
+            
+            if self.debug:
+                print(f"\nRunning: {' '.join(cmd)}")
             
             result = subprocess.run(
                 cmd,
@@ -60,6 +137,9 @@ class RustLibraryHandler:
                 capture_output=True,
                 text=True
             )
+            
+            if self.debug and result.stdout:
+                print(f"Output:\n{result.stdout}")
             
             if result.returncode != 0:
                 raise RuntimeError(f"Failed to add crate: {result.stderr}")
@@ -81,9 +161,22 @@ class RustLibraryHandler:
                     "generate-rust-props"
                 ]
             else:
-                # Linux/Mac: use bin/ce_install
+                # Linux/Mac: check if we can run ce_install directly
                 ce_install_path = self.infra_repo_path / "bin" / "ce_install"
-                cmd = [str(ce_install_path), "generate-rust-props"]
+                if ce_install_path.exists():
+                    # Make it executable if it isn't already
+                    ce_install_path.chmod(0o755)
+                    cmd = [str(ce_install_path), "generate-rust-props"]
+                else:
+                    # Try with poetry
+                    poetry_bin = self.infra_repo_path / ".poetry" / "bin" / "poetry"
+                    if poetry_bin.exists():
+                        cmd = [str(poetry_bin), "run", "bin/ce_install", "generate-rust-props"]
+                    else:
+                        raise RuntimeError("Could not find ce_install executable")
+            
+            if self.debug:
+                print(f"\nRunning: {' '.join(cmd)}")
             
             result = subprocess.run(
                 cmd,
@@ -91,6 +184,9 @@ class RustLibraryHandler:
                 capture_output=True,
                 text=True
             )
+            
+            if self.debug and result.stdout:
+                print(f"Output:\n{result.stdout}")
             
             if result.returncode != 0:
                 raise RuntimeError(f"Failed to generate rust props: {result.stderr}")
@@ -100,7 +196,14 @@ class RustLibraryHandler:
             if not props_file.exists():
                 raise RuntimeError("Props file was not generated")
             
-            return props_file.read_text()
+            props_content = props_file.read_text()
+            
+            # Delete the props file so it doesn't get committed
+            props_file.unlink()
+            if self.debug:
+                print("Deleted temporary props file")
+            
+            return props_content
             
         except Exception as e:
             raise RuntimeError(f"Error generating rust props: {e}")

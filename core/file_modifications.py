@@ -42,16 +42,39 @@ def update_rust_properties(repo_path: Path, new_props_content: str):
     # Read the existing file
     current_content = rust_props_path.read_text()
     
-    # Find the libs= line and everything after it
-    libs_pattern = re.compile(r'^libs=.*$', re.MULTILINE | re.DOTALL)
-    match = libs_pattern.search(current_content)
-    
-    if not match:
+    # Find the libs= section
+    libs_match = re.search(r'^libs=', current_content, re.MULTILINE)
+    if not libs_match:
         raise ValueError("Could not find 'libs=' line in rust.amazon.properties")
     
-    # Replace from libs= to the end of file with new content
-    libs_start = match.start()
-    new_content = current_content[:libs_start] + new_props_content
+    libs_start = libs_match.start()
+    
+    # Find the end of the libs section
+    # Look for the delimiter or the start of tools section
+    delimiter_pattern = re.compile(r'^#################################', re.MULTILINE)
+    tools_pattern = re.compile(r'^tools=', re.MULTILINE)
+    
+    # Search for delimiter after libs=
+    delimiter_match = delimiter_pattern.search(current_content, libs_start)
+    tools_match = tools_pattern.search(current_content, libs_start)
+    
+    # Determine the end of libs section
+    libs_end = len(current_content)  # Default to end of file
+    
+    if delimiter_match and tools_match:
+        # Use whichever comes first
+        libs_end = min(delimiter_match.start(), tools_match.start())
+    elif delimiter_match:
+        libs_end = delimiter_match.start()
+    elif tools_match:
+        libs_end = tools_match.start()
+    
+    # Build the new content
+    new_content = (
+        current_content[:libs_start] +  # Everything before libs=
+        new_props_content +              # New libs content
+        current_content[libs_end:]       # Everything after libs section
+    )
     
     # Write the updated content
     rust_props_path.write_text(new_content)

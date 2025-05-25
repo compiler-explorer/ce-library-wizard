@@ -9,22 +9,24 @@ from core.rust_handler import RustLibraryHandler
 from core.file_modifications import modify_main_repo_files, modify_infra_repo_files
 
 
-def process_rust_library(config: LibraryConfig, github_token: str = None):
+def process_rust_library(config: LibraryConfig, github_token: str = None, verify: bool = False, debug: bool = False):
     """Process a Rust library addition"""
     click.echo(f"\nProcessing Rust crate: {config.name} v{config.version}")
     
-    with GitManager(github_token) as git_mgr:
+    with GitManager(github_token, debug=debug) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
         
         # Create feature branches
         branch_name = f"add-rust-{config.name}-{config.version}".replace(".", "-")
-        git_mgr.create_branch(git_mgr.infra_repo, f"infra/{branch_name}")
-        git_mgr.create_branch(git_mgr.main_repo, f"main/{branch_name}")
+        infra_branch = f"{branch_name}-infra"
+        main_branch = f"{branch_name}-main"
+        git_mgr.create_branch(infra_repo_path, infra_branch)
+        git_mgr.create_branch(main_repo_path, main_branch)
         
         # Handle Rust-specific operations
         click.echo("Running ce_install to add crate...")
-        rust_handler = RustLibraryHandler(infra_repo_path)
+        rust_handler = RustLibraryHandler(infra_repo_path, debug=debug)
         
         try:
             libraries_yaml_path, new_props_content = rust_handler.process_rust_library(config)
@@ -35,31 +37,62 @@ def process_rust_library(config: LibraryConfig, github_token: str = None):
             props_file = modify_main_repo_files(main_repo_path, config, new_props_content)
             click.echo(f"✓ Modified {props_file.name}")
             
+            # Show diffs if verify flag is set
+            if verify:
+                click.echo("\n" + "="*60)
+                click.echo("CHANGES TO BE COMMITTED:")
+                click.echo("="*60)
+                
+                # Show infra repo diff
+                click.echo(f"\n📁 Repository: {GitManager.CE_INFRA_REPO}")
+                click.echo("-"*60)
+                infra_diff = git_mgr.get_diff(infra_repo_path)
+                if infra_diff:
+                    click.echo(infra_diff)
+                else:
+                    click.echo("No changes detected")
+                
+                # Show main repo diff
+                click.echo(f"\n📁 Repository: {GitManager.CE_MAIN_REPO}")
+                click.echo("-"*60)
+                main_diff = git_mgr.get_diff(main_repo_path)
+                if main_diff:
+                    click.echo(main_diff)
+                else:
+                    click.echo("No changes detected")
+                
+                click.echo("\n" + "="*60)
+                
+                # Ask for confirmation
+                if not click.confirm("\nDo you want to proceed with these changes?"):
+                    click.echo("Changes cancelled.")
+                    return
+            
             # Commit changes
             commit_msg = f"Add Rust crate {config.name} v{config.version}"
             
-            git_mgr.commit_changes(git_mgr.infra_repo, commit_msg)
-            git_mgr.commit_changes(git_mgr.main_repo, commit_msg)
+            git_mgr.commit_changes(infra_repo_path, commit_msg)
+            git_mgr.commit_changes(main_repo_path, commit_msg)
             
             if github_token:
                 # Push branches and create PRs
                 click.echo("\nPushing branches...")
-                git_mgr.push_branch(git_mgr.infra_repo, f"infra/{branch_name}")
-                git_mgr.push_branch(git_mgr.main_repo, f"main/{branch_name}")
+                git_mgr.push_branch(infra_repo_path, infra_branch)
+                git_mgr.push_branch(main_repo_path, main_branch)
                 
                 click.echo("\nCreating pull requests...")
                 pr_body = f"This PR adds the Rust crate **{config.name}** version {config.version} to Compiler Explorer."
                 
                 infra_pr_url = git_mgr.create_pull_request(
                     GitManager.CE_INFRA_REPO,
-                    f"infra/{branch_name}",
+                    infra_branch,
                     commit_msg,
                     pr_body
                 )
                 
                 main_pr_url = git_mgr.create_pull_request(
                     GitManager.CE_MAIN_REPO,
-                    f"main/{branch_name}",
+                    main_branch,
                     commit_msg,
                     pr_body + f"\n\nRelated PR: {infra_pr_url}"
                 )
@@ -79,20 +112,68 @@ def process_rust_library(config: LibraryConfig, github_token: str = None):
 @click.command()
 @click.option('--debug', is_flag=True, help='Enable debug mode')
 @click.option('--github-token', envvar='GITHUB_TOKEN', help='GitHub token for creating PRs')
-def main(debug: bool, github_token: str):
+@click.option('--oauth', is_flag=True, help='Authenticate via browser using GitHub OAuth')
+@click.option('--verify', is_flag=True, help='Show git diff of changes before committing')
+@click.option('--lang', type=click.Choice(['c', 'c++', 'rust', 'fortran', 'java', 'kotlin'], case_sensitive=False),
+              help='Language for the library')
+@click.option('--lib', help='Library name (for Rust) or GitHub URL (for other languages)')
+@click.option('--ver', help='Library version')
+def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, lib: str, ver: str):
     """CLI tool to add libraries to Compiler Explorer"""
     click.echo("Welcome to CE Library Wizard!")
     click.echo("This tool will help you add a new library to Compiler Explorer.\n")
     
     try:
-        config = ask_library_questions()
+        # Handle OAuth authentication if requested
+        if oauth:
+            if github_token:
+                click.echo("⚠️  Both --oauth and --github-token specified. Using existing token.")
+            else:
+                from core.github_auth import get_github_token_via_oauth
+                github_token = get_github_token_via_oauth()
+                if not github_token:
+                    click.echo("❌ Failed to authenticate. Exiting.", err=True)
+                    return 1
+        
+        # If all parameters provided, skip interactive questions
+        if lang and lib and ver:
+            from core.models import Language, LibraryConfig
+            
+            # Map language strings to enum values
+            lang_map = {
+                'c': Language.C,
+                'c++': Language.CPP,
+                'rust': Language.RUST,
+                'fortran': Language.FORTRAN,
+                'java': Language.JAVA,
+                'kotlin': Language.KOTLIN
+            }
+            
+            language = lang_map[lang.lower()]
+            
+            if language == Language.RUST:
+                config = LibraryConfig(
+                    language=language,
+                    name=lib,
+                    version=ver
+                )
+            else:
+                # For non-Rust, lib should be a GitHub URL
+                config = LibraryConfig(
+                    language=language,
+                    github_url=lib,
+                    version=ver
+                )
+        else:
+            # Interactive mode
+            config = ask_library_questions()
         
         if debug:
             click.echo("\nLibrary Configuration:")
             click.echo(config.model_dump_json(indent=2))
         
         if config.is_rust():
-            process_rust_library(config, github_token)
+            process_rust_library(config, github_token, verify, debug)
         else:
             click.echo("\n⚠️  Non-Rust languages not yet implemented.")
             click.echo("Currently only Rust crate additions are supported.")
