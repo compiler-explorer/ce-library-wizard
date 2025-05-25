@@ -19,8 +19,23 @@ A CLI tool to simplify adding libraries to [Compiler Explorer](https://godbolt.o
 git clone https://github.com/compiler-explorer/ce-lib-wizard.git
 cd ce-lib-wizard
 
-# Run directly with the provided script (handles virtual environment)
+# Run directly with the provided script (handles Poetry installation)
 ./run.sh
+```
+
+### Manual Installation
+
+If you prefer to install manually:
+
+```bash
+# Install Poetry (if not already installed)
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Install dependencies
+poetry install
+
+# Run the tool
+poetry run ce-lib-wizard
 ```
 
 ## Usage
@@ -127,6 +142,7 @@ Planned support:
 - Git
 - Make (for Linux/macOS) or PowerShell (for Windows)
 - Internet connection for cloning repositories
+- Poetry (automatically installed by `run.sh` if not present)
 
 ## Security Notes
 
