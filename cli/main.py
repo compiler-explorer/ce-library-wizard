@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import platform
 import traceback
 
 import click
@@ -17,6 +18,7 @@ def process_cpp_library(
     github_token: str | None = None,
     verify: bool = False,
     debug: bool = False,
+    install_test: bool = False,
 ):
     """Process a C++ library addition"""
     click.echo(f"\nProcessing C++ library: {config.library_id} v{config.version}")
@@ -50,6 +52,25 @@ def process_cpp_library(
                 return
 
             click.echo("✓ Modified libraries.yaml and generated properties")
+
+            # Check library paths
+            if install_test:
+                # Run install test if requested (non-Windows only)
+                if platform.system() == "Windows":
+                    click.echo("\n⚠️  Install test is not supported on Windows")
+                else:
+                    click.echo("\n🧪 Running install test...")
+                    if not cpp_handler.run_install_test(library_id, config.version):
+                        click.echo("❌ Install test failed. Aborting.", err=True)
+                        return
+                    click.echo("✓ Install test passed")
+            else:
+                # Just check paths without installing
+                click.echo("\n🔍 Checking library paths...")
+                if not cpp_handler.check_library_paths(library_id, config.version):
+                    click.echo("❌ Path check failed. Aborting.", err=True)
+                    return
+                click.echo("✓ Path check passed")
 
             # TODO: Update main repo files for C++
             # This will need implementation once we know the exact file structure
@@ -116,7 +137,10 @@ def process_cpp_library(
                         pr_body += f"- Library Type: {library_type}"
 
                     if infra_committed:
-                        infra_pr_body = pr_body + "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
+                        infra_pr_body = (
+                            pr_body
+                            + "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
+                        )
                         infra_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_INFRA_REPO, infra_branch, commit_msg, infra_pr_body
                         )
@@ -128,7 +152,7 @@ def process_cpp_library(
                         if infra_committed:
                             main_pr_body += f"\n\nRelated PR: {infra_pr_url}"
                         main_pr_body += "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
-                        
+
                         main_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_MAIN_REPO,
                             main_branch,
@@ -263,6 +287,7 @@ def process_rust_library(
 @click.option("--github-token", envvar="GITHUB_TOKEN", help="GitHub token for creating PRs")
 @click.option("--oauth", is_flag=True, help="Authenticate via browser using GitHub OAuth")
 @click.option("--verify", is_flag=True, help="Show git diff of changes before committing")
+@click.option("--install-test", is_flag=True, help="Test library installation (non-Windows only)")
 @click.option(
     "--lang",
     type=click.Choice(["c", "c++", "rust", "fortran", "java", "kotlin"], case_sensitive=False),
@@ -275,6 +300,7 @@ def main(
     github_token: str | None,
     oauth: bool,
     verify: bool,
+    install_test: bool,
     lang: str | None,
     lib: str | None,
     ver: str | None,
@@ -338,7 +364,7 @@ def main(
         if config.is_rust():
             process_rust_library(config, github_token, verify, debug)
         elif config.language == Language.CPP:
-            process_cpp_library(config, github_token, verify, debug)
+            process_cpp_library(config, github_token, verify, debug, install_test)
         else:
             click.echo("\n⚠️  This language is not yet implemented.")
             click.echo("Currently only Rust and C++ library additions are supported.")

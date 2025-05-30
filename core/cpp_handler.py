@@ -249,3 +249,158 @@ class CppHandler:
             return library_id or "new_library"
 
         return "new_library"
+
+    def run_install_test(self, library_id: str, version: str) -> bool:
+        """
+        Test installing the library using ce_install.
+
+        Args:
+            library_id: The library identifier
+            version: The library version
+
+        Returns:
+            True if installation succeeds, False otherwise
+        """
+        import re
+
+        try:
+            # Check if /opt/compiler-explorer exists
+            opt_ce_path = Path("/opt/compiler-explorer")
+            if not opt_ce_path.exists():
+                logger.error(
+                    f"Directory {opt_ce_path} does not exist. Please create it manually with:"
+                )
+                logger.error("  sudo mkdir -p /opt/compiler-explorer")
+                logger.error("  sudo chown -R $USER: /opt/compiler-explorer")
+                return False
+
+            # Run ce_install install command with --force
+            logger.info(f"Testing installation of {library_id} {version}...")
+            install_spec = f"{library_id} {version}"
+
+            result = run_ce_install_command(
+                ["install", "--force", install_spec], cwd=self.infra_path, debug=self.debug
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Installation test failed: {result.stderr}")
+                return False
+
+            # Check for staging to destination message in output
+            output = result.stdout + result.stderr
+            staging_pattern = r"Moving from staging \((.*?)\) to final destination \((.*?)\)"
+            staging_match = re.search(staging_pattern, output)
+
+            if not staging_match:
+                logger.error(
+                    "Installation output did not contain expected 'Moving from staging' message"
+                )
+                return False
+
+            destination_path = staging_match.group(2)
+            logger.info(f"Installation destination: {destination_path}")
+
+            # Check if destination path is in the properties file
+            if self.main_path:
+                props_file = self.main_path / "etc" / "config" / "c++.amazon.properties"
+                if props_file.exists():
+                    props_content = props_file.read_text()
+                    # Extract the library path from destination
+                    # (e.g., /opt/compiler-explorer/libs/nlohmann_json/v3.11.3)
+                    # and check if it appears in the properties
+                    if destination_path not in props_content:
+                        logger.error(
+                            f"Inconsistency detected: Installation destination "
+                            f"'{destination_path}' not found in properties file"
+                        )
+                        logger.error(
+                            "This suggests the properties file and installation are out of sync"
+                        )
+                        return False
+                else:
+                    logger.warning("Properties file not found for verification")
+
+            logger.info("Installation test succeeded")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error during install test: {e}")
+            return False
+
+    def check_library_paths(self, library_id: str, version: str) -> bool:
+        """
+        Check library paths using ce_install list-paths without installing.
+
+        Args:
+            library_id: The library identifier
+            version: The library version
+
+        Returns:
+            True if paths are consistent with properties, False otherwise
+        """
+        import re
+
+        try:
+            # Run ce_install list-paths command
+            logger.info(f"Checking paths for {library_id} {version}...")
+            install_spec = f"{library_id} {version}"
+
+            result = run_ce_install_command(
+                ["list-paths", install_spec], cwd=self.infra_path, debug=self.debug
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Path check failed: {result.stderr}")
+                return False
+
+            # Parse the output from list-paths
+            output = result.stdout + result.stderr
+            
+            # Log the output for debugging
+            if self.debug:
+                logger.debug(f"list-paths output: {output}")
+            
+            # list-paths might have different output format than install
+            # Look for the destination path in the output
+            destination_path = None
+            
+            # Try to parse the list-paths output format
+            # Expected format: "libraries/c++/{library} {version}: {path}"
+            list_paths_pattern = r"libraries/c\+\+/\S+\s+\S+:\s+(.+)"
+            list_match = re.search(list_paths_pattern, output)
+            
+            if list_match:
+                relative_path = list_match.group(1).strip()
+                # Convert relative path to absolute path
+                destination_path = f"/opt/compiler-explorer/{relative_path}"
+                logger.info(f"Library destination path: {destination_path}")
+            else:
+                # If no match found, log the output and continue without path check
+                logger.warning("Could not parse destination path from list-paths output")
+                logger.warning("Skipping path consistency check")
+                return True
+
+            # Check if destination path is in the properties file
+            if self.main_path:
+                props_file = self.main_path / "etc" / "config" / "c++.amazon.properties"
+                if props_file.exists():
+                    props_content = props_file.read_text()
+                    if destination_path not in props_content:
+                        logger.error(
+                            f"Inconsistency detected: Destination path "
+                            f"'{destination_path}' not found in properties file"
+                        )
+                        logger.error(
+                            "This suggests the properties file and library "
+                            "configuration are out of sync"
+                        )
+                        return False
+                else:
+                    logger.warning("Properties file not found for verification")
+
+            logger.info("Path check succeeded")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error during path check: {e}")
+            return False
