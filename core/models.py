@@ -1,5 +1,6 @@
-from typing import Optional, List
 from enum import Enum
+from typing import Optional
+
 from pydantic import BaseModel, HttpUrl
 
 
@@ -36,7 +37,7 @@ class LibraryConfig(BaseModel):
     is_header_only: Optional[bool] = None
     build_tool: Optional[BuildTool] = None
     link_type: Optional[LinkType] = None
-    binary_names: Optional[List[str]] = None
+    binary_names: Optional[list[str]] = None
     is_c_library: Optional[bool] = None
     name: Optional[str] = None  # For Rust crates
     library_type: Optional[LibraryType] = None  # For C++ libraries
@@ -47,6 +48,6 @@ class LibraryConfig(BaseModel):
 
     def requires_build_info(self) -> bool:
         return self.is_c_or_cpp() and self.is_header_only is False
-    
+
     def is_rust(self) -> bool:
         return self.language == Language.RUST

@@ -91,6 +91,22 @@ if [ -z "$GITHUB_TOKEN" ]; then
     echo
 fi
 
+# Check for special commands
+if [ "$1" = "--format" ]; then
+    print_info "Running code formatters..."
+    echo "======================================"
+    echo
+    
+    print_info "Running black formatter..."
+    poetry run black .
+    
+    print_info "Running ruff formatter..."
+    poetry run ruff check --fix .
+    
+    print_info "Formatting complete!"
+    exit 0
+fi
+
 # Run the CLI
 print_info "Starting CE Library Wizard..."
 echo "======================================"
