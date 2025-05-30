@@ -11,6 +11,8 @@ from typing import Optional
 import click
 import requests
 
+from .subprocess_utils import run_command
+
 
 class GitHubOAuthFlow:
     """Handle GitHub OAuth web flow authentication"""
@@ -205,10 +207,9 @@ class GitHubOAuthFlow:
 def get_github_token_via_gh_cli() -> Optional[str]:
     """Try to get token from GitHub CLI if installed"""
     try:
-        result = subprocess.run(
+        result = run_command(
             ["gh", "auth", "token"],
-            capture_output=True,
-            text=True
+            clean_env=False  # Keep full environment to preserve PATH
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()

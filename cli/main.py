@@ -5,7 +5,7 @@ import os
 import traceback
 from pathlib import Path
 from cli.questions import ask_library_questions
-from core.models import LibraryConfig
+from core.models import LibraryConfig, Language
 from core.git_operations import GitManager
 from core.rust_handler import RustLibraryHandler
 from core.cpp_handler import CppHandler
@@ -83,43 +83,50 @@ def process_cpp_library(config: LibraryConfig, github_token: str = None, verify:
             # Commit changes
             commit_msg = f"Add C++ library {config.library_id} v{config.version}"
             
-            git_mgr.commit_changes(infra_repo_path, commit_msg)
-            # Only commit main repo if there are changes
-            if git_mgr.get_diff(main_repo_path):
-                git_mgr.commit_changes(main_repo_path, commit_msg)
+            infra_committed = git_mgr.commit_changes(infra_repo_path, commit_msg)
+            main_committed = git_mgr.commit_changes(main_repo_path, commit_msg)
+            
+            if not infra_committed and not main_committed:
+                click.echo("⚠️  Library version already exists - no changes to commit.")
+                return
             
             if github_token:
-                # Push branches and create PRs
-                click.echo("\nPushing branches...")
-                git_mgr.push_branch(infra_repo_path, infra_branch)
-                # Only push main branch if there are commits
-                if git_mgr.get_diff(main_repo_path):
-                    git_mgr.push_branch(main_repo_path, main_branch)
-                
-                click.echo("\nCreating pull requests...")
-                pr_body = f"This PR adds the C++ library **{config.library_id}** version {config.version} to Compiler Explorer.\n\n"
-                pr_body += f"- GitHub URL: {config.github_url}\n"
-                pr_body += f"- Library Type: {config.library_type.value if config.library_type else 'Unknown'}"
-                
-                infra_pr_url = git_mgr.create_pull_request(
-                    GitManager.CE_INFRA_REPO,
-                    infra_branch,
-                    commit_msg,
-                    pr_body
-                )
-                
-                click.echo(f"\n✓ Created PR:")
-                click.echo(f"  - Infra: {infra_pr_url}")
-                
-                # Only create main PR if there are changes
-                if git_mgr.get_diff(main_repo_path):
-                    main_pr_url = git_mgr.create_pull_request(
-                        GitManager.CE_MAIN_REPO,
-                        main_branch,
-                        commit_msg,
-                        pr_body + f"\n\nRelated PR: {infra_pr_url}"
-                    )
-                    click.echo(f"  - Main: {main_pr_url}")
+                # Only proceed with pushing and PRs if we have commits
+                if infra_committed or main_committed:
+                    # Push branches and create PRs
+                    click.echo("\nPushing branches...")
+                    if infra_committed:
+                        git_mgr.push_branch(infra_repo_path, infra_branch)
+                    if main_committed:
+                        git_mgr.push_branch(main_repo_path, main_branch)
+                    
+                    click.echo("\nCreating pull requests...")
+                    pr_body = f"This PR adds the C++ library **{config.library_id}** version {config.version} to Compiler Explorer.\n\n"
+                    pr_body += f"- GitHub URL: {config.github_url}\n"
+                    pr_body += f"- Library Type: {config.library_type.value if config.library_type else 'Unknown'}"
+                    
+                    if infra_committed:
+                        infra_pr_url = git_mgr.create_pull_request(
+                            GitManager.CE_INFRA_REPO,
+                            infra_branch,
+                            commit_msg,
+                            pr_body
+                        )
+                        click.echo(f"\n✓ Created PR:")
+                        click.echo(f"  - Infra: {infra_pr_url}")
+                    
+                    if main_committed:
+                        main_pr_url = git_mgr.create_pull_request(
+                            GitManager.CE_MAIN_REPO,
+                            main_branch,
+                            commit_msg,
+                            pr_body + (f"\n\nRelated PR: {infra_pr_url}" if infra_committed else "")
+                        )
+                        if not infra_committed:
+                            click.echo(f"\n✓ Created PR:")
+                        click.echo(f"  - Main: {main_pr_url}")
+                else:
+                    click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
                 click.echo("\n⚠️  No GitHub token provided. Changes committed locally but not pushed.")
                 click.echo("To push changes and create PRs, set GITHUB_TOKEN environment variable.")
@@ -247,12 +254,16 @@ def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, l
     click.echo("This tool will help you add a new library to Compiler Explorer.\n")
     
     try:
-        # Handle OAuth authentication if requested
-        if oauth:
+        # Try to get GitHub token if not provided
+        if not github_token:
+            from core.github_auth import get_github_token_via_gh_cli, get_github_token_via_oauth
+            
+            # First try GitHub CLI
+            github_token = get_github_token_via_gh_cli()
             if github_token:
-                click.echo("⚠️  Both --oauth and --github-token specified. Using existing token.")
-            else:
-                from core.github_auth import get_github_token_via_oauth
+                click.echo("✅ Using GitHub CLI authentication")
+            elif oauth:
+                # Only try OAuth if explicitly requested
                 github_token = get_github_token_via_oauth()
                 if not github_token:
                     click.echo("❌ Failed to authenticate. Exiting.", err=True)
@@ -260,7 +271,6 @@ def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, l
         
         # If all parameters provided, skip interactive questions
         if lang and lib and ver:
-            from core.models import Language, LibraryConfig
             
             # Map language strings to enum values
             lang_map = {

@@ -1,11 +1,15 @@
-from typing import Tuple, Optional
-from pathlib import Path
-import tempfile
-import shutil
+import logging
 import os
+import shutil
+import tempfile
 import time
+from pathlib import Path
+from typing import Tuple, Optional
+
 from github import Github
 from .subprocess_utils import run_git_command
+
+logger = logging.getLogger(__name__)
 
 
 class GitManager:
@@ -105,10 +109,7 @@ class GitManager:
             str(self.infra_repo_path)
         ])
         
-        # Checkout the add-cpp-library-commands branch for testing
-        self._run_git_command([
-            "git", "checkout", "add-cpp-library-commands"
-        ], cwd=str(self.infra_repo_path))
+        # C++ library commands are now available in main branch
         
         # Add upstream remotes if we're using forks
         if self.github_token:
@@ -127,7 +128,27 @@ class GitManager:
         return self.main_repo_path, self.infra_repo_path
     
     def create_branch(self, repo_path: Path, branch_name: str):
-        """Create a new branch in the given repository"""
+        """Create a new branch in the given repository, syncing with upstream first"""
+        # If we have a GitHub token (meaning we're using forks), sync with upstream first
+        if self.github_token:
+            try:
+                # Fetch from upstream to get latest changes
+                self._run_git_command(["git", "fetch", "upstream"], cwd=str(repo_path))
+                
+                # Make sure we're on main branch
+                self._run_git_command(["git", "checkout", "main"], cwd=str(repo_path))
+                
+                # Merge upstream/main into our local main
+                self._run_git_command(["git", "merge", "upstream/main"], cwd=str(repo_path))
+                
+                # Push updated main to our fork
+                self._run_git_command(["git", "push", "origin", "main"], cwd=str(repo_path))
+                
+            except Exception as e:
+                # If syncing fails, log warning but continue - user might not have upstream configured
+                logger.warning(f"Failed to sync with upstream for {repo_path.name}: {e}")
+        
+        # Create the new branch from the (hopefully updated) main
         self._run_git_command(["git", "checkout", "-b", branch_name], cwd=str(repo_path))
     
     def get_diff(self, repo_path: Path) -> str:
@@ -153,9 +174,20 @@ class GitManager:
             return ""
     
     def commit_changes(self, repo_path: Path, message: str):
-        """Stage all changes and commit"""
+        """Stage all changes and commit if there are changes"""
+        # Stage all changes
         self._run_git_command(["git", "add", "-A"], cwd=str(repo_path))
-        self._run_git_command(["git", "commit", "-m", message], cwd=str(repo_path))
+        
+        # Check if there are changes to commit
+        try:
+            result = self._run_git_command(["git", "diff", "--cached", "--quiet"], cwd=str(repo_path))
+            # If git diff --cached --quiet succeeds (exit code 0), there are no staged changes
+            logger.info(f"No changes to commit in {repo_path.name}")
+            return False
+        except:
+            # If git diff --cached --quiet fails (exit code 1), there are staged changes
+            self._run_git_command(["git", "commit", "-m", message], cwd=str(repo_path))
+            return True
     
     def push_branch(self, repo_path: Path, branch_name: str, remote_name: str = "origin"):
         """Push branch to remote"""
