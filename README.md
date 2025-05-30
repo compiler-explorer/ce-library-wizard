@@ -1,15 +1,17 @@
 # CE Library Wizard
 
-A CLI tool to simplify adding libraries to [Compiler Explorer](https://godbolt.org/).
+A CLI tool that automates the process of adding libraries to [Compiler Explorer](https://compiler-explorer.com/). It handles repository forking, library detection, properties generation, and pull request creation - making library contributions quick and error-free.
 
 ## Features
 
 - 🚀 Interactive CLI for adding libraries to Compiler Explorer
-- 🦀 Special support for Rust crates with automated `ce_install` integration
+- 🦀 **Rust support** - Fully automated with `ce_install` integration
+- ⚡ **C++ support** - Automated library detection and properties generation
 - 🔐 Multiple authentication methods (OAuth, GitHub CLI, Personal Access Token)
 - 🍴 Automatic forking of repositories for users without write access
 - 📝 Preview changes with `--verify` flag before committing
 - 🎯 Command-line arguments for automation
+- 🔍 Debug mode with comprehensive logging
 - 🌍 Cross-platform support (Linux, macOS, Windows)
 
 ## Installation
@@ -63,11 +65,14 @@ export GITHUB_TOKEN=your_github_token
 # Add a Rust library directly
 ./run.sh --lang=rust --lib=ahash --ver=0.8.12
 
+# Add a C++ library from GitHub
+./run.sh --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
+
 # With OAuth authentication
 ./run.sh --oauth --lang=rust --lib=ahash --ver=0.8.12
 
 # Preview changes
-./run.sh --verify --lang=rust --lib=ahash --ver=0.8.12
+./run.sh --verify --lang=cpp --lib=https://github.com/nlohmann/json --ver=3.11.3
 
 # Debug mode
 ./run.sh --debug --lang=rust --lib=ahash --ver=0.8.12
@@ -98,10 +103,10 @@ The tool supports three authentication methods:
 
 Currently supported:
 - **Rust** - Fully automated using `ce_install` utilities
+- **C++** - Automated library detection and properties generation
 
 Planned support:
 - C
-- C++
 - Fortran
 - Java
 - Kotlin
@@ -126,14 +131,34 @@ Planned support:
 7. **Commit & Push** - Commits changes and pushes to your fork
 8. **Pull Requests** - Creates PRs from your fork to the upstream repositories
 
+### For C++ Libraries
+
+1. **Authentication** - Authenticates with GitHub (if token/OAuth provided)
+2. **Forking** - Automatically creates or uses existing forks of:
+   - `compiler-explorer/compiler-explorer`
+   - `compiler-explorer/infra`
+3. **Setup** - Clones repositories and sets up environment
+4. **Library Detection**:
+   - Detects library type by checking for CMakeLists.txt (defaults to packaged-headers)
+   - Validates and suggests library ID following lowercase_with_underscores convention
+5. **Library Addition**:
+   - Uses `ce_install cpp-library add` to add the library to `libraries.yaml`
+   - Generates properties with `ce_install generate-linux-props` and `generate-windows-props`
+6. **File Updates**:
+   - Updates `bin/yaml/libraries.yaml` in the infra repository
+   - Updates C++ properties files in the main repository
+7. **Review** (optional) - Shows diffs with `--verify` flag
+8. **Commit & Push** - Commits changes and pushes to your fork
+9. **Pull Requests** - Creates PRs from your fork to the upstream repositories
+
 ## Command-Line Options
 
 - `--oauth` - Authenticate via browser using GitHub OAuth
 - `--verify` - Show git diff of changes before committing
 - `--debug` - Enable debug mode with verbose output
 - `--github-token TOKEN` - Specify GitHub token directly
-- `--lang LANGUAGE` - Specify the language (c, c++, rust, fortran, java, kotlin)
-- `--lib NAME` - Library name (for Rust) or GitHub URL (for other languages)
+- `--lang LANGUAGE` - Specify the language (c, cpp, rust, fortran, java, kotlin)
+- `--lib NAME` - Library name (for Rust) or GitHub URL (for C++)
 - `--ver VERSION` - Library version
 
 ## Requirements
