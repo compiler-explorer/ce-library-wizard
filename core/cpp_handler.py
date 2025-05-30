@@ -1,12 +1,11 @@
 """Handle C++ library additions to Compiler Explorer."""
 import logging
-import os
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .models import LibraryConfig, LibraryType
+from .subprocess_utils import run_make_command, run_ce_install_command
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,6 @@ class CppHandler:
     def __init__(self, infra_path: Path, main_path: Path = None, setup_ce_install: bool = True, debug: bool = False):
         self.infra_path = infra_path
         self.main_path = main_path
-        self.is_windows = os.name == 'nt'
         self.debug = debug
         if setup_ce_install:
             self.setup_ce_install()
@@ -27,38 +25,12 @@ class CppHandler:
         try:
             # Need to run make ce first
             logger.info("Setting up ce_install...")
-            if self.is_windows:
-                # Windows: run PowerShell script
-                setup_cmd = ["powershell.exe", "-ExecutionPolicy", "Bypass", 
-                           "-File", str(self.infra_path / "ce_install.ps1")]
-            else:
-                # Unix: run make ce
-                setup_cmd = ["make", "ce"]
             
-            if self.debug:
-                logger.info(f"Running setup command: {' '.join(setup_cmd)}")
-                logger.info(f"Working directory: {self.infra_path}")
-            
-            # Create a clean environment without our VIRTUAL_ENV
-            env = os.environ.copy()
-            if 'VIRTUAL_ENV' in env:
-                del env['VIRTUAL_ENV']
-            if 'POETRY_ACTIVE' in env:
-                del env['POETRY_ACTIVE']
-            
-            result = subprocess.run(
-                setup_cmd,
+            result = run_make_command(
+                "ce",
                 cwd=self.infra_path,
-                capture_output=True,
-                text=True,
-                env=env
+                debug=self.debug
             )
-            
-            if self.debug:
-                if result.stdout:
-                    logger.info(f"Setup command output:\n{result.stdout}")
-                if result.stderr:
-                    logger.info(f"Setup command stderr:\n{result.stderr}")
             
             if result.returncode != 0:
                 logger.warning(f"Setup command failed with return code: {result.returncode}")
@@ -79,11 +51,11 @@ class CppHandler:
             clone_path = Path(tmpdir) / "repo"
             
             try:
-                # Clone the repository
-                result = subprocess.run(
+                # Clone the repository  
+                from .subprocess_utils import run_command
+                result = run_command(
                     ["git", "clone", "--depth", "1", github_url, str(clone_path)],
-                    capture_output=True,
-                    text=True
+                    clean_env=False
                 )
                 
                 if result.returncode != 0:
@@ -117,31 +89,19 @@ class CppHandler:
         """
         try:
             # Run ce_install cpp-library add command
-            cmd = [
-                "bin/ce_install",
+            subcommand = [
                 "cpp-library", "add",
                 str(config.github_url),
                 config.version
             ]
             
             if config.library_type:
-                cmd.extend(["--type", config.library_type.value])
+                subcommand.extend(["--type", config.library_type.value])
             
-            logger.info(f"Running command: {' '.join(cmd)}")
-            
-            # Create a clean environment without our VIRTUAL_ENV
-            env = os.environ.copy()
-            if 'VIRTUAL_ENV' in env:
-                del env['VIRTUAL_ENV']
-            if 'POETRY_ACTIVE' in env:
-                del env['POETRY_ACTIVE']
-            
-            result = subprocess.run(
-                cmd,
+            result = run_ce_install_command(
+                subcommand,
                 cwd=self.infra_path,
-                capture_output=True,
-                text=True,
-                env=env
+                debug=self.debug
             )
 
             if result.returncode != 0:
@@ -151,7 +111,6 @@ class CppHandler:
             
             # Parse the output to get the library ID
             output = result.stdout.strip()
-            logger.info(f"add command output: {output}")
             
             # Look for the library ID in the output
             # Possible formats:
@@ -204,8 +163,7 @@ class CppHandler:
                 
             # Generate Linux properties
             props_file = self.main_path / "etc" / "config" / "c++.amazon.properties"
-            cmd_linux = [
-                "bin/ce_install",
+            subcommand_linux = [
                 "cpp-library", "generate-linux-props",
                 "--input-file", str(props_file),
                 "--output-file", str(props_file),
@@ -213,21 +171,10 @@ class CppHandler:
                 "--version", version
             ]
             
-            logger.info(f"Running command: {' '.join(cmd_linux)}")
-            
-            # Create a clean environment without our VIRTUAL_ENV
-            env = os.environ.copy()
-            if 'VIRTUAL_ENV' in env:
-                del env['VIRTUAL_ENV']
-            if 'POETRY_ACTIVE' in env:
-                del env['POETRY_ACTIVE']
-            
-            result = subprocess.run(
-                cmd_linux,
+            result = run_ce_install_command(
+                subcommand_linux,
                 cwd=self.infra_path,
-                capture_output=True,
-                text=True,
-                env=env
+                debug=self.debug
             )
             
             if result.returncode != 0:
@@ -237,26 +184,12 @@ class CppHandler:
             logger.info("Successfully generated Linux C++ properties")
             
             # Also generate Windows properties
-            cmd_windows = [
-                "bin/ce_install",
-                "cpp-library", "generate-windows-props"
-            ]
+            subcommand_windows = ["cpp-library", "generate-windows-props"]
             
-            logger.info(f"Running command: {' '.join(cmd_windows)}")
-            
-            # Create a clean environment without our VIRTUAL_ENV
-            env = os.environ.copy()
-            if 'VIRTUAL_ENV' in env:
-                del env['VIRTUAL_ENV']
-            if 'POETRY_ACTIVE' in env:
-                del env['POETRY_ACTIVE']
-            
-            result = subprocess.run(
-                cmd_windows,
+            result = run_ce_install_command(
+                subcommand_windows,
                 cwd=self.infra_path,
-                capture_output=True,
-                text=True,
-                env=env
+                debug=self.debug
             )
             
             if result.returncode != 0:

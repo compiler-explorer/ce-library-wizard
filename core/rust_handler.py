@@ -1,9 +1,9 @@
-import subprocess
 import platform
 import os
 from pathlib import Path
 from typing import Tuple, Optional
 from core.models import LibraryConfig
+from .subprocess_utils import run_command, run_make_command
 
 
 class RustLibraryHandler:
@@ -14,14 +14,6 @@ class RustLibraryHandler:
         self.is_windows = platform.system() == "Windows"
         self.debug = debug
     
-    def _get_clean_env(self) -> dict:
-        """Get environment without our virtual env variables"""
-        env = os.environ.copy()
-        if 'VIRTUAL_ENV' in env:
-            del env['VIRTUAL_ENV']
-        if 'POETRY_ACTIVE' in env:
-            del env['POETRY_ACTIVE']
-        return env
         
     def setup_ce_install(self) -> bool:
         """Run make ce or ce_install.ps1 based on platform"""
@@ -45,39 +37,39 @@ class RustLibraryHandler:
                        "-File", str(self.infra_repo_path / "ce_install.ps1")]
             else:
                 # Find the actual Python executable
-                python_result = subprocess.run(
+                python_result = run_command(
                     ["which", "python3"],
-                    capture_output=True,
-                    text=True,
-                    env=self._get_clean_env()
+                    clean_env=True
                 )
                 python_path = python_result.stdout.strip()
                 
                 # Run make ce on Linux/Mac with explicit Python path
-                cmd = ["make", "ce", f"PYTHON={python_path}"]
+                extra_env = {"PYTHON": python_path} if python_path else None
             
             if self.debug:
                 print(f"\nRunning command: {' '.join(cmd)}")
                 print(f"Working directory: {self.infra_repo_path}")
             
-            # Run the command, suppressing output unless in debug mode
-            if self.debug:
-                # In debug mode, show output in real-time
-                result = subprocess.run(
+            # Run the command
+            if self.is_windows:
+                # Windows PowerShell command
+                result = run_command(
                     cmd,
-                    cwd=str(self.infra_repo_path),
-                    env={**self._get_clean_env(), "VERBOSE": "1"}
+                    cwd=self.infra_repo_path,
+                    clean_env=True,
+                    capture_output=not self.debug,
+                    debug=self.debug
                 )
             else:
-                # In normal mode, suppress all output
-                with open(os.devnull, 'w') as devnull:
-                    result = subprocess.run(
-                        cmd,
-                        cwd=str(self.infra_repo_path),
-                        stdout=devnull,
-                        stderr=devnull,
-                        env=self._get_clean_env()
-                    )
+                # Unix make command  
+                if self.debug and extra_env:
+                    extra_env["VERBOSE"] = "1"
+                result = run_make_command(
+                    "ce",
+                    cwd=self.infra_repo_path,
+                    extra_env=extra_env,
+                    debug=self.debug
+                )
             
             if self.debug:
                 print(f"\nCommand exit code: {result.returncode}")
@@ -141,12 +133,12 @@ class RustLibraryHandler:
             if self.debug:
                 print(f"\nRunning: {' '.join(cmd)}")
             
-            result = subprocess.run(
+            result = run_command(
                 cmd,
-                cwd=str(self.infra_repo_path),
+                cwd=self.infra_repo_path,
                 capture_output=True,
                 text=True,
-                env=self._get_clean_env()
+                clean_env=True, debug=self.debug
             )
             
             if self.debug and result.stdout:

@@ -2,10 +2,10 @@ from typing import Tuple, Optional
 from pathlib import Path
 import tempfile
 import shutil
-import subprocess
 import os
 import time
 from github import Github
+from .subprocess_utils import run_git_command
 
 
 class GitManager:
@@ -38,26 +38,10 @@ class GitManager:
             except:
                 pass  # Best effort cleanup
     
-    def _run_git_command(self, cmd: list, cwd: str = None) -> subprocess.CompletedProcess:
+    def _run_git_command(self, cmd: list, cwd: str = None):
         """Run a git command and return the result"""
         working_dir = cwd or self.temp_dir
-        
-        if self.debug:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Running git command: {' '.join(cmd)}")
-            logger.info(f"Working directory: {working_dir}")
-        
-        try:
-            return subprocess.run(
-                cmd,
-                cwd=working_dir,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Git command failed: {' '.join(cmd)}\n{e.stderr}")
+        return run_git_command(cmd, cwd=working_dir, debug=self.debug)
     
     def _ensure_fork_exists(self, original_repo: str) -> str:
         """Ensure user has a fork of the repository, create if needed"""
