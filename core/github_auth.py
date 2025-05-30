@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import secrets
 import threading
@@ -5,7 +7,6 @@ import time
 import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Optional
 
 import click
 import requests
@@ -29,7 +30,7 @@ class GitHubOAuthFlow:
         self.error = None
         self.state = None
 
-    def authenticate(self) -> Optional[str]:
+    def authenticate(self) -> str | None:
         """Perform OAuth web flow authentication and return access token"""
 
         if not self.CLIENT_ID or not self.CLIENT_SECRET:
@@ -72,7 +73,7 @@ class GitHubOAuthFlow:
 
         try:
             webbrowser.open(auth_url)
-        except:
+        except Exception:
             pass
 
         # Step 3: Wait for callback
@@ -207,7 +208,7 @@ class GitHubOAuthFlow:
         return server
 
 
-def get_github_token_via_gh_cli() -> Optional[str]:
+def get_github_token_via_gh_cli() -> str | None:
     """Try to get token from GitHub CLI if installed"""
     try:
         result = run_command(
@@ -215,12 +216,12 @@ def get_github_token_via_gh_cli() -> Optional[str]:
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
-    except:
+    except Exception:
         pass
     return None
 
 
-def get_github_token_via_oauth() -> Optional[str]:
+def get_github_token_via_oauth() -> str | None:
     """Get GitHub token using OAuth web flow or gh CLI"""
     # First try GitHub CLI if available
     gh_token = get_github_token_via_gh_cli()

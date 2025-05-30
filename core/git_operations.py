@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import logging
 import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
 
 from github import Github
 
@@ -18,7 +19,7 @@ class GitManager:
     CE_MAIN_REPO = "compiler-explorer/compiler-explorer"
     CE_INFRA_REPO = "compiler-explorer/infra"
 
-    def __init__(self, github_token: Optional[str] = None, debug: bool = False):
+    def __init__(self, github_token: str | None = None, debug: bool = False):
         self.github_token = github_token
         self.debug = debug
         self.temp_dir = None
@@ -39,7 +40,7 @@ class GitManager:
         if self.temp_dir and Path(self.temp_dir).exists():
             try:
                 shutil.rmtree(self.temp_dir, ignore_errors=True)
-            except:
+            except Exception:  # noqa: S110
                 pass  # Best effort cleanup
 
     def _run_git_command(self, cmd: list, cwd: str = None):
@@ -60,7 +61,7 @@ class GitManager:
             fork = self.github_client.get_repo(f"{username}/{original_repo.split('/')[1]}")
             print(f"✓ Using existing fork: {fork.full_name}")
             return fork.full_name
-        except:
+        except Exception:
             # Fork doesn't exist, create it
             print(f"Creating fork of {original_repo}...")
             original = self.github_client.get_repo(original_repo)
@@ -143,8 +144,8 @@ class GitManager:
                 self._run_git_command(["git", "push", "origin", "main"], cwd=str(repo_path))
 
             except Exception as e:
-                # If syncing fails, log warning but continue - user might not have upstream configured
-                logger.warning(f"Failed to sync with upstream for {repo_path.name}: {e}")
+                # If syncing fails, log warning but continue
+                logger.warning(f"Failed to sync with upstream for {repo_path.name}: {e!s}")
 
         # Create the new branch from the (hopefully updated) main
         self._run_git_command(["git", "checkout", "-b", branch_name], cwd=str(repo_path))
@@ -168,7 +169,7 @@ class GitManager:
                 full_diff += unstaged_diff
 
             return full_diff
-        except:
+        except Exception:
             return ""
 
     def commit_changes(self, repo_path: Path, message: str):
@@ -178,13 +179,11 @@ class GitManager:
 
         # Check if there are changes to commit
         try:
-            result = self._run_git_command(
-                ["git", "diff", "--cached", "--quiet"], cwd=str(repo_path)
-            )
+            self._run_git_command(["git", "diff", "--cached", "--quiet"], cwd=str(repo_path))
             # If git diff --cached --quiet succeeds (exit code 0), there are no staged changes
             logger.info(f"No changes to commit in {repo_path.name}")
             return False
-        except:
+        except Exception:
             # If git diff --cached --quiet fails (exit code 1), there are staged changes
             self._run_git_command(["git", "commit", "-m", message], cwd=str(repo_path))
             return True

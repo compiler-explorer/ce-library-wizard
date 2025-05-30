@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from core.models import LibraryConfig
 
@@ -81,7 +83,7 @@ def update_rust_properties(repo_path: Path, new_props_content: str):
 
 
 def modify_main_repo_files(
-    repo_path: Path, config: LibraryConfig, rust_props_content: Optional[str] = None
+    repo_path: Path, config: LibraryConfig, rust_props_content: str | None = None
 ):
     """Modify files in the main compiler-explorer repository"""
     if config.is_rust() and rust_props_content:

@@ -1,9 +1,10 @@
 """Utility functions for subprocess calls with clean environment handling."""
+from __future__ import annotations
+
 import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +21,12 @@ def get_clean_env() -> dict[str, str]:
 
 def run_command(
     cmd: list[str],
-    cwd: Optional[Union[str, Path]] = None,
+    cwd: str | Path | None = None,
     capture_output: bool = True,
     text: bool = True,
     check: bool = False,
     clean_env: bool = True,
-    extra_env: Optional[dict[str, str]] = None,
+    extra_env: dict[str, str] | None = None,
     debug: bool = False,
 ) -> subprocess.CompletedProcess:
     """
@@ -85,7 +86,7 @@ def run_command(
 
 
 def run_git_command(
-    cmd: list[str], cwd: Optional[Union[str, Path]] = None, debug: bool = False
+    cmd: list[str], cwd: str | Path | None = None, debug: bool = False
 ) -> subprocess.CompletedProcess:
     """
     Run a git command with error handling.
@@ -110,11 +111,11 @@ def run_git_command(
             debug=debug,
         )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Git command failed: {' '.join(cmd)}\n{e.stderr}")
+        raise RuntimeError(f"Git command failed: {' '.join(cmd)}\n{e.stderr}") from e
 
 
 def run_ce_install_command(
-    subcommand: list[str], cwd: Union[str, Path], debug: bool = False
+    subcommand: list[str], cwd: str | Path, debug: bool = False
 ) -> subprocess.CompletedProcess:
     """
     Run a ce_install command with clean environment.
@@ -133,8 +134,8 @@ def run_ce_install_command(
 
 def run_make_command(
     target: str,
-    cwd: Union[str, Path],
-    extra_env: Optional[dict[str, str]] = None,
+    cwd: str | Path,
+    extra_env: dict[str, str] | None = None,
     debug: bool = False,
 ) -> subprocess.CompletedProcess:
     """

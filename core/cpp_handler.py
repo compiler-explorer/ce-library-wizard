@@ -1,9 +1,10 @@
 """Handle C++ library additions to Compiler Explorer."""
+from __future__ import annotations
+
 import logging
 import re
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 from .models import LibraryConfig, LibraryType
 from .subprocess_utils import run_ce_install_command, run_command, run_make_command
@@ -41,9 +42,9 @@ class CppHandler:
             return True
 
         except Exception as e:
-            raise RuntimeError(f"Error setting up ce_install: {e}")
+            raise RuntimeError(f"Error setting up ce_install: {e}") from e
 
-    def detect_library_type(self, github_url: str) -> tuple[bool, Optional[LibraryType]]:
+    def detect_library_type(self, github_url: str) -> tuple[bool, LibraryType | None]:
         """
         Clone repository and detect if it's header-only by checking for CMakeLists.txt.
 
@@ -78,7 +79,7 @@ class CppHandler:
                 logger.error(f"Error detecting library type: {e}")
                 return False, None
 
-    def add_library(self, config: LibraryConfig) -> Optional[str]:
+    def add_library(self, config: LibraryConfig) -> str | None:
         """
         Add a C++ library using ce_install utilities.
 

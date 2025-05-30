@@ -103,9 +103,13 @@ def process_cpp_library(
                         git_mgr.push_branch(main_repo_path, main_branch)
 
                     click.echo("\nCreating pull requests...")
-                    pr_body = f"This PR adds the C++ library **{config.library_id}** version {config.version} to Compiler Explorer.\n\n"
+                    pr_body = (
+                        f"This PR adds the C++ library **{config.library_id}** "
+                        f"version {config.version} to Compiler Explorer.\n\n"
+                    )
                     pr_body += f"- GitHub URL: {config.github_url}\n"
-                    pr_body += f"- Library Type: {config.library_type.value if config.library_type else 'Unknown'}"
+                    library_type = config.library_type.value if config.library_type else "Unknown"
+                    pr_body += f"- Library Type: {library_type}"
 
                     if infra_committed:
                         infra_pr_url = git_mgr.create_pull_request(
@@ -212,7 +216,10 @@ def process_rust_library(
                 git_mgr.push_branch(main_repo_path, main_branch)
 
                 click.echo("\nCreating pull requests...")
-                pr_body = f"This PR adds the Rust crate **{config.name}** version {config.version} to Compiler Explorer."
+                pr_body = (
+                    f"This PR adds the Rust crate **{config.name}** "
+                    f"version {config.version} to Compiler Explorer."
+                )
 
                 infra_pr_url = git_mgr.create_pull_request(
                     GitManager.CE_INFRA_REPO, infra_branch, commit_msg, pr_body

@@ -101,7 +101,7 @@ class RustLibraryHandler:
             return True
 
         except Exception as e:
-            raise RuntimeError(f"Error setting up ce_install: {e}")
+            raise RuntimeError(f"Error setting up ce_install: {e}") from e
 
     def add_crate(self, crate_name: str, version: str) -> Path:
         """Add a Rust crate using ce_install add-crate command"""
@@ -162,7 +162,7 @@ class RustLibraryHandler:
             return self.infra_repo_path / "bin" / "yaml" / "libraries.yaml"
 
         except Exception as e:
-            raise RuntimeError(f"Error adding crate: {e}")
+            raise RuntimeError(f"Error adding crate: {e}") from e
 
     def generate_rust_props(self) -> str:
         """Generate Rust properties file content"""
@@ -195,12 +195,13 @@ class RustLibraryHandler:
             if self.debug:
                 print(f"\nRunning: {' '.join(cmd)}")
 
-            result = subprocess.run(
+            from .subprocess_utils import run_command
+
+            result = run_command(
                 cmd,
-                cwd=str(self.infra_repo_path),
-                capture_output=True,
-                text=True,
-                env=self._get_clean_env(),
+                cwd=self.infra_repo_path,
+                clean_env=True,
+                debug=self.debug,
             )
 
             if self.debug and result.stdout:
@@ -224,7 +225,7 @@ class RustLibraryHandler:
             return props_content
 
         except Exception as e:
-            raise RuntimeError(f"Error generating rust props: {e}")
+            raise RuntimeError(f"Error generating rust props: {e}") from e
 
     def process_rust_library(self, config: LibraryConfig) -> tuple[Path, str]:
         """Process a Rust library addition and return paths to modified files"""

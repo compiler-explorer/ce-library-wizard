@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, HttpUrl
 
@@ -32,16 +33,16 @@ class LibraryType(str, Enum):
 
 class LibraryConfig(BaseModel):
     language: Language
-    github_url: Optional[HttpUrl] = None
+    github_url: HttpUrl | None = None
     version: str
-    is_header_only: Optional[bool] = None
-    build_tool: Optional[BuildTool] = None
-    link_type: Optional[LinkType] = None
-    binary_names: Optional[list[str]] = None
-    is_c_library: Optional[bool] = None
-    name: Optional[str] = None  # For Rust crates
-    library_type: Optional[LibraryType] = None  # For C++ libraries
-    library_id: Optional[str] = None  # Library identifier for C++
+    is_header_only: bool | None = None
+    build_tool: BuildTool | None = None
+    link_type: LinkType | None = None
+    binary_names: list[str] | None = None
+    is_c_library: bool | None = None
+    name: str | None = None  # For Rust crates
+    library_type: LibraryType | None = None  # For C++ libraries
+    library_id: str | None = None  # Library identifier for C++
 
     def is_c_or_cpp(self) -> bool:
         return self.language in [Language.C, Language.CPP]
