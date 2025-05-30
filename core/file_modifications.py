@@ -80,34 +80,3 @@ def update_rust_properties(repo_path: Path, new_props_content: str):
     rust_props_path.write_text(new_content)
 
     return rust_props_path
-
-
-def modify_main_repo_files(
-    repo_path: Path, config: LibraryConfig, rust_props_content: str | None = None
-):
-    """Modify files in the main compiler-explorer repository"""
-    if config.is_rust() and rust_props_content:
-        # For Rust, we only need to update the properties file
-        return update_rust_properties(repo_path, rust_props_content)
-
-    # TODO: Implement for other languages
-    # This will involve:
-    # 1. Finding the appropriate library configuration file for the language
-    # 2. Adding the new library entry
-    # 3. Ensuring proper formatting and validation
-    pass
-
-
-def modify_infra_repo_files(repo_path: Path, config: LibraryConfig):
-    """Modify files in the infra repository"""
-    if config.is_rust():
-        # Rust modifications are handled by ce_install in rust_handler.py
-        # The libraries.yaml file is already modified by add-crate command
-        return
-
-    # TODO: Implement for other languages
-    # This will involve:
-    # 1. Finding the appropriate build/deployment configuration
-    # 2. Adding necessary build steps or configurations
-    # 3. Ensuring the library can be properly built and deployed
-    pass

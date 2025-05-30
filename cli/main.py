@@ -7,7 +7,7 @@ import click
 
 from cli.questions import ask_library_questions
 from core.cpp_handler import CppHandler
-from core.file_modifications import modify_main_repo_files
+from core.file_modifications import update_rust_properties
 from core.git_operations import GitManager
 from core.models import Language, LibraryConfig
 from core.rust_handler import RustLibraryHandler
@@ -208,7 +208,7 @@ def process_rust_library(
 
             # Update main repo with new properties
             click.echo("Updating rust.amazon.properties...")
-            props_file = modify_main_repo_files(main_repo_path, config, new_props_content)
+            props_file = update_rust_properties(main_repo_path, new_props_content)
             click.echo(f"✓ Modified {props_file.name}")
 
             # Show diffs if verify flag is set
