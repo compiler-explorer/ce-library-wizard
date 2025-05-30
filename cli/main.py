@@ -13,7 +13,10 @@ from core.rust_handler import RustLibraryHandler
 
 
 def process_cpp_library(
-    config: LibraryConfig, github_token: str = None, verify: bool = False, debug: bool = False
+    config: LibraryConfig,
+    github_token: str | None = None,
+    verify: bool = False,
+    debug: bool = False,
 ):
     """Process a C++ library addition"""
     click.echo(f"\nProcessing C++ library: {config.library_id} v{config.version}")
@@ -143,7 +146,10 @@ def process_cpp_library(
 
 
 def process_rust_library(
-    config: LibraryConfig, github_token: str = None, verify: bool = False, debug: bool = False
+    config: LibraryConfig,
+    github_token: str | None = None,
+    verify: bool = False,
+    debug: bool = False,
 ):
     """Process a Rust library addition"""
     click.echo(f"\nProcessing Rust crate: {config.name} v{config.version}")
@@ -258,7 +264,15 @@ def process_rust_library(
 )
 @click.option("--lib", help="Library name (for Rust) or GitHub URL (for other languages)")
 @click.option("--ver", help="Library version")
-def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, lib: str, ver: str):
+def main(
+    debug: bool,
+    github_token: str | None,
+    oauth: bool,
+    verify: bool,
+    lang: str | None,
+    lib: str | None,
+    ver: str | None,
+):
     """CLI tool to add libraries to Compiler Explorer"""
     if debug:
         logging.basicConfig(level=logging.DEBUG, format="[%(levelname)s] %(name)s: %(message)s")

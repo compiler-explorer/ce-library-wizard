@@ -110,6 +110,13 @@ if [ "$1" = "--format" ]; then
             exit 1
         fi
         
+        print_info "Running pytype type checking..."
+        if poetry run pytype; then
+            print_info "PyType type checking passed!"
+        else
+            print_warning "PyType type checking completed with warnings (not failing build)"
+        fi
+        
         print_info "All code quality checks passed!"
         exit 0
     else

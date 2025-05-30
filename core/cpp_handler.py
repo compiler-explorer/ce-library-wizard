@@ -18,7 +18,7 @@ class CppHandler:
     def __init__(
         self,
         infra_path: Path,
-        main_path: Path = None,
+        main_path: Path | None = None,
         setup_ce_install: bool = True,
         debug: bool = False,
     ):
