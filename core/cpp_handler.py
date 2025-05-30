@@ -1,11 +1,12 @@
 """Handle C++ library additions to Compiler Explorer."""
 import logging
+import re
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .models import LibraryConfig, LibraryType
-from .subprocess_utils import run_make_command, run_ce_install_command
+from .subprocess_utils import run_make_command, run_ce_install_command, run_command
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,6 @@ class CppHandler:
             
             try:
                 # Clone the repository  
-                from .subprocess_utils import run_command
                 result = run_command(
                     ["git", "clone", "--depth", "1", github_url, str(clone_path)],
                     clean_env=False
@@ -117,7 +117,6 @@ class CppHandler:
             # - "Added version X to library <library_id>"
             # - "Library '<library_id>' is now available"
             # - "--library <library_id>"
-            import re
             
             # Try multiple patterns
             patterns = [
@@ -218,7 +217,6 @@ class CppHandler:
         Returns:
             True if valid, False otherwise
         """
-        import re
         # Must be lowercase letters, numbers, and underscores only
         # Must start with a letter
         pattern = r'^[a-z][a-z0-9_]*$'
@@ -248,7 +246,6 @@ class CppHandler:
                 repo_name = repo_name[:-4]
             
             # Convert to lowercase and replace non-alphanumeric with underscores
-            import re
             library_id = re.sub(r'[^a-z0-9]+', '_', repo_name.lower())
             # Remove leading/trailing underscores
             library_id = library_id.strip('_')

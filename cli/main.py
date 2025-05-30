@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import click
+import logging
 import os
+import traceback
 from pathlib import Path
 from cli.questions import ask_library_questions
 from core.models import LibraryConfig
@@ -239,7 +241,6 @@ def process_rust_library(config: LibraryConfig, github_token: str = None, verify
 def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, lib: str, ver: str):
     """CLI tool to add libraries to Compiler Explorer"""
     if debug:
-        import logging
         logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(name)s: %(message)s')
     
     click.echo("Welcome to CE Library Wizard!")
@@ -312,7 +313,6 @@ def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, l
         return 1
     except Exception as e:
         if debug:
-            import traceback
             traceback.print_exc()
         click.echo(f"\nError: {e}", err=True)
         return 1

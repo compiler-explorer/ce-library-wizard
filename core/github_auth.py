@@ -1,13 +1,15 @@
-import time
-import webbrowser
-import requests
-import click
 import os
 import secrets
+import subprocess
+import threading
+import time
 import urllib.parse
+import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional
-import threading
+
+import click
+import requests
 
 
 class GitHubOAuthFlow:
@@ -203,7 +205,6 @@ class GitHubOAuthFlow:
 def get_github_token_via_gh_cli() -> Optional[str]:
     """Try to get token from GitHub CLI if installed"""
     try:
-        import subprocess
         result = subprocess.run(
             ["gh", "auth", "token"],
             capture_output=True,
