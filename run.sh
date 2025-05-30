@@ -44,6 +44,12 @@ fi
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
+# Always cleanup existing environment to ensure fresh install
+if [ -d ".venv" ]; then
+    print_info "Cleaning up existing virtual environment..."
+    rm -rf .venv
+fi
+
 # Check if Poetry is installed
 if ! command -v poetry &> /dev/null; then
     print_info "Poetry not found. Installing Poetry..."
@@ -68,16 +74,14 @@ fi
 poetry config virtualenvs.in-project true --local 2>/dev/null || true
 
 # Install dependencies
-if [ ! -d ".venv" ] || [ pyproject.toml -nt ".venv" ]; then
-    print_info "Installing dependencies with Poetry..."
-    poetry install --no-interaction --no-ansi
-    
-    if [ $? -eq 0 ]; then
-        print_info "Installation complete!"
-    else
-        print_error "Failed to install dependencies"
-        exit 1
-    fi
+print_info "Installing dependencies with Poetry..."
+poetry install --no-interaction --no-ansi
+
+if [ $? -eq 0 ]; then
+    print_info "Installation complete!"
+else
+    print_error "Failed to install dependencies"
+    exit 1
 fi
 
 # Check if GITHUB_TOKEN is set

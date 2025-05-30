@@ -13,6 +13,15 @@ class RustLibraryHandler:
         self.infra_repo_path = infra_repo_path
         self.is_windows = platform.system() == "Windows"
         self.debug = debug
+    
+    def _get_clean_env(self) -> dict:
+        """Get environment without our virtual env variables"""
+        env = os.environ.copy()
+        if 'VIRTUAL_ENV' in env:
+            del env['VIRTUAL_ENV']
+        if 'POETRY_ACTIVE' in env:
+            del env['POETRY_ACTIVE']
+        return env
         
     def setup_ce_install(self) -> bool:
         """Run make ce or ce_install.ps1 based on platform"""
@@ -39,7 +48,8 @@ class RustLibraryHandler:
                 python_result = subprocess.run(
                     ["which", "python3"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    env=self._get_clean_env()
                 )
                 python_path = python_result.stdout.strip()
                 
@@ -56,7 +66,7 @@ class RustLibraryHandler:
                 result = subprocess.run(
                     cmd,
                     cwd=str(self.infra_repo_path),
-                    env={**os.environ, "VERBOSE": "1"}
+                    env={**self._get_clean_env(), "VERBOSE": "1"}
                 )
             else:
                 # In normal mode, suppress all output
@@ -66,7 +76,7 @@ class RustLibraryHandler:
                         cwd=str(self.infra_repo_path),
                         stdout=devnull,
                         stderr=devnull,
-                        env=os.environ
+                        env=self._get_clean_env()
                     )
             
             if self.debug:
@@ -135,7 +145,8 @@ class RustLibraryHandler:
                 cmd,
                 cwd=str(self.infra_repo_path),
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._get_clean_env()
             )
             
             if self.debug and result.stdout:
@@ -182,7 +193,8 @@ class RustLibraryHandler:
                 cmd,
                 cwd=str(self.infra_repo_path),
                 capture_output=True,
-                text=True
+                text=True,
+                env=self._get_clean_env()
             )
             
             if self.debug and result.stdout:

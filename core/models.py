@@ -22,6 +22,13 @@ class LinkType(str, Enum):
     STATIC = "static"
 
 
+class LibraryType(str, Enum):
+    HEADER_ONLY = "header-only"
+    PACKAGED_HEADERS = "packaged-headers"
+    STATIC = "static"
+    SHARED = "shared"
+
+
 class LibraryConfig(BaseModel):
     language: Language
     github_url: Optional[HttpUrl] = None
@@ -32,6 +39,8 @@ class LibraryConfig(BaseModel):
     binary_names: Optional[List[str]] = None
     is_c_library: Optional[bool] = None
     name: Optional[str] = None  # For Rust crates
+    library_type: Optional[LibraryType] = None  # For C++ libraries
+    library_id: Optional[str] = None  # Library identifier for C++
 
     def is_c_or_cpp(self) -> bool:
         return self.language in [Language.C, Language.CPP]

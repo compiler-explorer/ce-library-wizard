@@ -1,6 +1,6 @@
 from typing import List
 import inquirer
-from core.models import LibraryConfig, Language, BuildTool, LinkType
+from core.models import LibraryConfig, Language, BuildTool, LinkType, LibraryType
 
 
 def ask_library_questions() -> LibraryConfig:
@@ -60,8 +60,54 @@ def ask_library_questions() -> LibraryConfig:
         'version': version_answer['version']
     }
     
+    # C++ specific questions
+    if language == Language.CPP:
+        # First, ask for library ID
+        from core.cpp_handler import CppHandler
+        # Use a temporary instance just for ID suggestion (no path needed)
+        suggested_id = CppHandler.suggest_library_id_static(github_answer['github_url'])
+        
+        library_id_question = [
+            inquirer.Text('library_id',
+                         message="What should be the library ID? (lowercase with underscores)",
+                         default=suggested_id,
+                         validate=lambda _, x: CppHandler.validate_library_id_static(x) or "Must be lowercase letters, numbers, and underscores only")
+        ]
+        library_id_answer = inquirer.prompt(library_id_question)
+        config_data['library_id'] = library_id_answer['library_id']
+        
+        # Detect library type by cloning and checking
+        print("\nAnalyzing repository to detect library type...")
+        # Create a temporary handler just for detection (no ce_install setup needed)
+        from pathlib import Path
+        cpp_handler = CppHandler(Path.home(), setup_ce_install=False, debug=False)
+        is_valid, detected_type = cpp_handler.detect_library_type(github_answer['github_url'])
+        
+        if not is_valid:
+            print("⚠️  Could not automatically detect library type.")
+            detected_type = None
+        else:
+            print(f"✓ Detected library type: {detected_type.value if detected_type else 'Unknown'}")
+        
+        # Ask about library type with detected value as default
+        library_type_choices = [
+            LibraryType.HEADER_ONLY.value,
+            LibraryType.PACKAGED_HEADERS.value,
+            LibraryType.STATIC.value,
+            LibraryType.SHARED.value
+        ]
+        
+        library_type_question = [
+            inquirer.List('library_type',
+                         message="What type of library is this?",
+                         choices=library_type_choices,
+                         default=detected_type.value if detected_type else LibraryType.PACKAGED_HEADERS.value)
+        ]
+        library_type_answer = inquirer.prompt(library_type_question)
+        config_data['library_type'] = LibraryType(library_type_answer['library_type'])
+        
     # C/C++ specific questions
-    if language in [Language.C, Language.CPP]:
+    elif language in [Language.C, Language.CPP]:
         # Question 4: Header-only?
         header_only_question = [
             inquirer.Confirm('is_header_only',

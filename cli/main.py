@@ -6,7 +6,125 @@ from cli.questions import ask_library_questions
 from core.models import LibraryConfig
 from core.git_operations import GitManager
 from core.rust_handler import RustLibraryHandler
+from core.cpp_handler import CppHandler
 from core.file_modifications import modify_main_repo_files, modify_infra_repo_files
+
+
+def process_cpp_library(config: LibraryConfig, github_token: str = None, verify: bool = False, debug: bool = False):
+    """Process a C++ library addition"""
+    click.echo(f"\nProcessing C++ library: {config.library_id} v{config.version}")
+    
+    with GitManager(github_token, debug=debug) as git_mgr:
+        click.echo("Cloning repositories...")
+        main_repo_path, infra_repo_path = git_mgr.clone_repositories()
+        
+        # Create feature branches
+        branch_name = f"add-cpp-{config.library_id}-{config.version}".replace(".", "-")
+        infra_branch = f"{branch_name}-infra"
+        main_branch = f"{branch_name}-main"
+        git_mgr.create_branch(infra_repo_path, infra_branch)
+        git_mgr.create_branch(main_repo_path, main_branch)
+        
+        # Handle C++ specific operations
+        click.echo("Running ce_install to add C++ library...")
+        cpp_handler = CppHandler(infra_repo_path, main_repo_path, debug=debug)
+        
+        try:
+            # Add library to libraries.yaml
+            library_id = cpp_handler.add_library(config)
+            if not library_id:
+                click.echo("❌ Failed to add library to libraries.yaml", err=True)
+                return
+            
+            # Generate C++ properties
+            click.echo("Generating C++ properties...")
+            if not cpp_handler.generate_properties(library_id, config.version):
+                click.echo("❌ Failed to generate C++ properties", err=True)
+                return
+            
+            click.echo("✓ Modified libraries.yaml and generated properties")
+            
+            # TODO: Update main repo files for C++
+            # This will need implementation once we know the exact file structure
+            
+            # Show diffs if verify flag is set
+            if verify:
+                click.echo("\n" + "="*60)
+                click.echo("CHANGES TO BE COMMITTED:")
+                click.echo("="*60)
+                
+                # Show infra repo diff
+                click.echo(f"\n📁 Repository: {GitManager.CE_INFRA_REPO}")
+                click.echo("-"*60)
+                infra_diff = git_mgr.get_diff(infra_repo_path)
+                if infra_diff:
+                    click.echo(infra_diff)
+                else:
+                    click.echo("No changes detected")
+                
+                # Show main repo diff
+                click.echo(f"\n📁 Repository: {GitManager.CE_MAIN_REPO}")
+                click.echo("-"*60)
+                main_diff = git_mgr.get_diff(main_repo_path)
+                if main_diff:
+                    click.echo(main_diff)
+                else:
+                    click.echo("No changes detected")
+                
+                click.echo("\n" + "="*60)
+                
+                # Ask for confirmation
+                if not click.confirm("\nDo you want to proceed with these changes?"):
+                    click.echo("Changes cancelled.")
+                    return
+            
+            # Commit changes
+            commit_msg = f"Add C++ library {config.library_id} v{config.version}"
+            
+            git_mgr.commit_changes(infra_repo_path, commit_msg)
+            # Only commit main repo if there are changes
+            if git_mgr.get_diff(main_repo_path):
+                git_mgr.commit_changes(main_repo_path, commit_msg)
+            
+            if github_token:
+                # Push branches and create PRs
+                click.echo("\nPushing branches...")
+                git_mgr.push_branch(infra_repo_path, infra_branch)
+                # Only push main branch if there are commits
+                if git_mgr.get_diff(main_repo_path):
+                    git_mgr.push_branch(main_repo_path, main_branch)
+                
+                click.echo("\nCreating pull requests...")
+                pr_body = f"This PR adds the C++ library **{config.library_id}** version {config.version} to Compiler Explorer.\n\n"
+                pr_body += f"- GitHub URL: {config.github_url}\n"
+                pr_body += f"- Library Type: {config.library_type.value if config.library_type else 'Unknown'}"
+                
+                infra_pr_url = git_mgr.create_pull_request(
+                    GitManager.CE_INFRA_REPO,
+                    infra_branch,
+                    commit_msg,
+                    pr_body
+                )
+                
+                click.echo(f"\n✓ Created PR:")
+                click.echo(f"  - Infra: {infra_pr_url}")
+                
+                # Only create main PR if there are changes
+                if git_mgr.get_diff(main_repo_path):
+                    main_pr_url = git_mgr.create_pull_request(
+                        GitManager.CE_MAIN_REPO,
+                        main_branch,
+                        commit_msg,
+                        pr_body + f"\n\nRelated PR: {infra_pr_url}"
+                    )
+                    click.echo(f"  - Main: {main_pr_url}")
+            else:
+                click.echo("\n⚠️  No GitHub token provided. Changes committed locally but not pushed.")
+                click.echo("To push changes and create PRs, set GITHUB_TOKEN environment variable.")
+                
+        except Exception as e:
+            click.echo(f"\n❌ Error processing C++ library: {e}", err=True)
+            raise
 
 
 def process_rust_library(config: LibraryConfig, github_token: str = None, verify: bool = False, debug: bool = False):
@@ -120,6 +238,10 @@ def process_rust_library(config: LibraryConfig, github_token: str = None, verify
 @click.option('--ver', help='Library version')
 def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, lib: str, ver: str):
     """CLI tool to add libraries to Compiler Explorer"""
+    if debug:
+        import logging
+        logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(name)s: %(message)s')
+    
     click.echo("Welcome to CE Library Wizard!")
     click.echo("This tool will help you add a new library to Compiler Explorer.\n")
     
@@ -164,6 +286,11 @@ def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, l
                     github_url=lib,
                     version=ver
                 )
+                
+                # For C++, we need to set library_id
+                if language == Language.CPP:
+                    from core.cpp_handler import CppHandler
+                    config.library_id = CppHandler.suggest_library_id_static(lib)
         else:
             # Interactive mode
             config = ask_library_questions()
@@ -174,9 +301,11 @@ def main(debug: bool, github_token: str, oauth: bool, verify: bool, lang: str, l
         
         if config.is_rust():
             process_rust_library(config, github_token, verify, debug)
+        elif config.language == Language.CPP:
+            process_cpp_library(config, github_token, verify, debug)
         else:
-            click.echo("\n⚠️  Non-Rust languages not yet implemented.")
-            click.echo("Currently only Rust crate additions are supported.")
+            click.echo("\n⚠️  This language is not yet implemented.")
+            click.echo("Currently only Rust and C++ library additions are supported.")
         
     except KeyboardInterrupt:
         click.echo("\n\nCancelled by user.")

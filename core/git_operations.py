@@ -40,10 +40,18 @@ class GitManager:
     
     def _run_git_command(self, cmd: list, cwd: str = None) -> subprocess.CompletedProcess:
         """Run a git command and return the result"""
+        working_dir = cwd or self.temp_dir
+        
+        if self.debug:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Running git command: {' '.join(cmd)}")
+            logger.info(f"Working directory: {working_dir}")
+        
         try:
             return subprocess.run(
                 cmd,
-                cwd=cwd or self.temp_dir,
+                cwd=working_dir,
                 capture_output=True,
                 text=True,
                 check=True
@@ -112,6 +120,11 @@ class GitManager:
             infra_clone_url,
             str(self.infra_repo_path)
         ])
+        
+        # Checkout the add-cpp-library-commands branch for testing
+        self._run_git_command([
+            "git", "checkout", "add-cpp-library-commands"
+        ], cwd=str(self.infra_repo_path))
         
         # Add upstream remotes if we're using forks
         if self.github_token:
