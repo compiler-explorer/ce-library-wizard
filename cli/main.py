@@ -112,22 +112,28 @@ def process_cpp_library(
                     )
                     pr_body += f"- GitHub URL: {config.github_url}\n"
                     library_type = config.library_type.value if config.library_type else "Unknown"
-                    pr_body += f"- Library Type: {library_type}"
+                    if library_type != "Unknown":
+                        pr_body += f"- Library Type: {library_type}"
 
                     if infra_committed:
+                        infra_pr_body = pr_body + "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
                         infra_pr_url = git_mgr.create_pull_request(
-                            GitManager.CE_INFRA_REPO, infra_branch, commit_msg, pr_body
+                            GitManager.CE_INFRA_REPO, infra_branch, commit_msg, infra_pr_body
                         )
                         click.echo("\n✓ Created PR:")
                         click.echo(f"  - Infra: {infra_pr_url}")
 
                     if main_committed:
+                        main_pr_body = pr_body
+                        if infra_committed:
+                            main_pr_body += f"\n\nRelated PR: {infra_pr_url}"
+                        main_pr_body += "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
+                        
                         main_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_MAIN_REPO,
                             main_branch,
                             commit_msg,
-                            pr_body
-                            + (f"\n\nRelated PR: {infra_pr_url}" if infra_committed else ""),
+                            main_pr_body,
                         )
                         if not infra_committed:
                             click.echo("\n✓ Created PR:")
