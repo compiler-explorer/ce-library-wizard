@@ -355,20 +355,20 @@ class CppHandler:
 
             # Parse the output from list-paths
             output = result.stdout + result.stderr
-            
+
             # Log the output for debugging
             if self.debug:
                 logger.debug(f"list-paths output: {output}")
-            
+
             # list-paths might have different output format than install
             # Look for the destination path in the output
             destination_path = None
-            
+
             # Try to parse the list-paths output format
             # Expected format: "libraries/c++/{library} {version}: {path}"
             list_paths_pattern = r"libraries/c\+\+/\S+\s+\S+:\s+(.+)"
             list_match = re.search(list_paths_pattern, output)
-            
+
             if list_match:
                 relative_path = list_match.group(1).strip()
                 # Convert relative path to absolute path

@@ -61,3 +61,4 @@ api/user-handler.js  # Lambda/API handler
 - Validate input at the boundary (CLI/API layer)
 - Process data in the core layer
 - **Always place all imports at the top of the file** - avoid inline imports unless absolutely necessary for circular dependency resolution
+- **Always run `./run.sh --format` before committing any changes** to ensure code formatting is consistent
