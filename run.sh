@@ -84,10 +84,17 @@ else
     exit 1
 fi
 
-# Check if GITHUB_TOKEN is set
-if [ -z "$GITHUB_TOKEN" ]; then
-    print_warning "GITHUB_TOKEN not set. You won't be able to create pull requests."
-    print_info "To enable PR creation, run: export GITHUB_TOKEN=your_token_here"
+# Check if GitHub authentication is available
+if [ -z "$GITHUB_TOKEN" ] && ! command -v gh &> /dev/null; then
+    print_warning "No GitHub authentication found."
+    print_info "To enable PR creation, use one of these options:"
+    print_info "  - Install and authenticate GitHub CLI: gh auth login"
+    print_info "  - Set GITHUB_TOKEN environment variable"
+    print_info "  - Use --oauth flag for browser-based authentication"
+    echo
+elif [ -z "$GITHUB_TOKEN" ] && ! gh auth status &> /dev/null; then
+    print_warning "GitHub CLI is installed but not authenticated."
+    print_info "To enable PR creation, run: gh auth login"
     echo
 fi
 

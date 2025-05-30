@@ -166,9 +166,12 @@ def process_cpp_library(
                     click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
                 click.echo(
-                    "\n⚠️  No GitHub token provided. Changes committed locally but not pushed."
+                    "\n⚠️  No GitHub authentication found. Changes committed locally but not pushed."
                 )
-                click.echo("To push changes and create PRs, set GITHUB_TOKEN environment variable.")
+                click.echo("To push changes and create PRs, use one of these options:")
+                click.echo("  - Install and authenticate GitHub CLI: gh auth login")
+                click.echo("  - Set GITHUB_TOKEN environment variable")
+                click.echo("  - Use --oauth flag for browser-based authentication")
 
         except Exception as e:
             click.echo(f"\n❌ Error processing C++ library: {e}", err=True)
@@ -273,9 +276,12 @@ def process_rust_library(
                 click.echo(f"  - Main: {main_pr_url}")
             else:
                 click.echo(
-                    "\n⚠️  No GitHub token provided. Changes committed locally but not pushed."
+                    "\n⚠️  No GitHub authentication found. Changes committed locally but not pushed."
                 )
-                click.echo("To push changes and create PRs, set GITHUB_TOKEN environment variable.")
+                click.echo("To push changes and create PRs, use one of these options:")
+                click.echo("  - Install and authenticate GitHub CLI: gh auth login")
+                click.echo("  - Set GITHUB_TOKEN environment variable")
+                click.echo("  - Use --oauth flag for browser-based authentication")
 
         except Exception as e:
             click.echo(f"\n❌ Error processing Rust library: {e}", err=True)
