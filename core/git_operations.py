@@ -43,7 +43,7 @@ class GitManager:
             except Exception:  # noqa: S110
                 pass  # Best effort cleanup
 
-    def _run_git_command(self, cmd: list, cwd: str = None):
+    def _run_git_command(self, cmd: list, cwd: str | None = None):
         """Run a git command and return the result"""
         working_dir = cwd or self.temp_dir
         return run_git_command(cmd, cwd=working_dir, debug=self.debug)
