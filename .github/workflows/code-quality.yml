@@ -1,0 +1,30 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Run formatters and check for issues
+      run: |
+        # Make run.sh executable
+        chmod +x run.sh
+        
+        # Run black in check mode (fails if formatting needed)
+        echo "Running black formatter check..."
+        ./run.sh --format --check
+        
+        echo "✅ All code quality checks passed!"

@@ -93,18 +93,39 @@ fi
 
 # Check for special commands
 if [ "$1" = "--format" ]; then
-    print_info "Running code formatters..."
-    echo "======================================"
-    echo
-    
-    print_info "Running black formatter..."
-    poetry run black .
-    
-    print_info "Running ruff formatter..."
-    poetry run ruff check --fix .
-    
-    print_info "Formatting complete!"
-    exit 0
+    if [ "$2" = "--check" ]; then
+        print_info "Running code quality checks..."
+        echo "======================================"
+        echo
+        
+        print_info "Running black formatter check..."
+        if ! poetry run black --check --diff .; then
+            print_error "Black formatting check failed!"
+            exit 1
+        fi
+        
+        print_info "Running ruff linter check..."
+        if ! poetry run ruff check .; then
+            print_error "Ruff linting check failed!"
+            exit 1
+        fi
+        
+        print_info "All code quality checks passed!"
+        exit 0
+    else
+        print_info "Running code formatters..."
+        echo "======================================"
+        echo
+        
+        print_info "Running black formatter..."
+        poetry run black .
+        
+        print_info "Running ruff formatter..."
+        poetry run ruff check --fix .
+        
+        print_info "Formatting complete!"
+        exit 0
+    fi
 fi
 
 # Run the CLI
