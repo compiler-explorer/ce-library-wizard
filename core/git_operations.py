@@ -19,9 +19,10 @@ class GitManager:
     CE_MAIN_REPO = "compiler-explorer/compiler-explorer"
     CE_INFRA_REPO = "compiler-explorer/infra"
 
-    def __init__(self, github_token: str | None = None, debug: bool = False):
+    def __init__(self, github_token: str | None = None, debug: bool = False, keep_temp: bool = False):
         self.github_token = github_token
         self.debug = debug
+        self.keep_temp = keep_temp
         self.temp_dir = None
         self.main_repo_path = None
         self.infra_repo_path = None
@@ -38,10 +39,13 @@ class GitManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.temp_dir and Path(self.temp_dir).exists():
-            try:
-                shutil.rmtree(self.temp_dir, ignore_errors=True)
-            except Exception:  # noqa: S110
-                pass  # Best effort cleanup
+            if self.keep_temp:
+                logger.info(f"Keeping temporary directory: {self.temp_dir}")
+            else:
+                try:
+                    shutil.rmtree(self.temp_dir, ignore_errors=True)
+                except Exception:  # noqa: S110
+                    pass  # Best effort cleanup
 
     def _run_git_command(self, cmd: list, cwd: str | None = None):
         """Run a git command and return the result"""

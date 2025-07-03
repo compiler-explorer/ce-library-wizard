@@ -24,11 +24,12 @@ def process_cpp_library(
     verify: bool = False,
     debug: bool = False,
     install_test: bool = False,
+    keep_temp: bool = False,
 ):
     """Process a C++ library addition"""
     click.echo(f"\nProcessing C++ library: {config.library_id} v{config.version}")
 
-    with GitManager(github_token, debug=debug) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
@@ -176,11 +177,12 @@ def process_rust_library(
     github_token: str | None = None,
     verify: bool = False,
     debug: bool = False,
+    keep_temp: bool = False,
 ):
     """Process a Rust library addition"""
     click.echo(f"\nProcessing Rust crate: {config.name} v{config.version}")
 
-    with GitManager(github_token, debug=debug) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
@@ -277,11 +279,12 @@ def process_fortran_library(
     github_token: str | None = None,
     verify: bool = False,
     debug: bool = False,
+    keep_temp: bool = False,
 ):
     """Process a Fortran library addition"""
     click.echo(f"\nProcessing Fortran library: {config.library_id or 'unknown'} v{config.version}")
 
-    with GitManager(github_token, debug=debug) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
@@ -404,6 +407,7 @@ def process_fortran_library(
 @click.option("--oauth", is_flag=True, help="Authenticate via browser using GitHub OAuth")
 @click.option("--verify", is_flag=True, help="Show git diff of changes before committing")
 @click.option("--install-test", is_flag=True, help="Test library installation (non-Windows only)")
+@click.option("--keep-temp", is_flag=True, help="Keep temporary directories for debugging")
 @click.option(
     "--lang",
     type=click.Choice(["c", "c++", "rust", "fortran", "java", "kotlin"], case_sensitive=False),
@@ -417,6 +421,7 @@ def main(
     oauth: bool,
     verify: bool,
     install_test: bool,
+    keep_temp: bool,
     lang: str | None,
     lib: str | None,
     ver: str | None,
@@ -480,11 +485,11 @@ def main(
             click.echo(config.model_dump_json(indent=2))
 
         if config.is_rust():
-            process_rust_library(config, github_token, verify, debug)
+            process_rust_library(config, github_token, verify, debug, keep_temp)
         elif config.language == Language.CPP:
-            process_cpp_library(config, github_token, verify, debug, install_test)
+            process_cpp_library(config, github_token, verify, debug, install_test, keep_temp)
         elif config.language == Language.FORTRAN:
-            process_fortran_library(config, github_token, verify, debug)
+            process_fortran_library(config, github_token, verify, debug, keep_temp)
         else:
             click.echo("\n⚠️  This language is not yet implemented.")
             click.echo("Currently only Rust, C++, and Fortran library additions are supported.")
