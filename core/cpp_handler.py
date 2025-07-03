@@ -6,8 +6,14 @@ import re
 import tempfile
 from pathlib import Path
 
+from .library_utils import (
+    setup_ce_install as setup_ce_install_shared,
+)
+from .library_utils import (
+    suggest_library_id_from_github_url,
+)
 from .models import LibraryConfig, LibraryType
-from .subprocess_utils import run_ce_install_command, run_command, run_make_command
+from .subprocess_utils import run_ce_install_command, run_command
 
 logger = logging.getLogger(__name__)
 
@@ -30,19 +36,7 @@ class CppHandler:
 
     def setup_ce_install(self) -> bool:
         """Ensure ce_install is available"""
-        try:
-            # Need to run make ce first
-            logger.info("Setting up ce_install...")
-
-            result = run_make_command("ce", cwd=self.infra_path, debug=self.debug)
-
-            if result.returncode != 0:
-                logger.warning(f"Setup command failed with return code: {result.returncode}")
-
-            return True
-
-        except Exception as e:
-            raise RuntimeError(f"Error setting up ce_install: {e}") from e
+        return setup_ce_install_shared(self.infra_path, self.debug)
 
     def detect_library_type(self, github_url: str) -> tuple[bool, LibraryType | None]:
         """
@@ -230,25 +224,7 @@ class CppHandler:
         Returns:
             Suggested library ID following naming conventions
         """
-        # Extract repo name from URL
-        parts = github_url.rstrip("/").split("/")
-        if len(parts) >= 2:
-            repo_name = parts[-1]
-            # Remove .git suffix if present
-            if repo_name.endswith(".git"):
-                repo_name = repo_name[:-4]
-
-            # Convert to lowercase and replace non-alphanumeric with underscores
-            library_id = re.sub(r"[^a-z0-9]+", "_", repo_name.lower())
-            # Remove leading/trailing underscores
-            library_id = library_id.strip("_")
-            # Ensure it starts with a letter
-            if library_id and not library_id[0].isalpha():
-                library_id = "lib_" + library_id
-
-            return library_id or "new_library"
-
-        return "new_library"
+        return suggest_library_id_from_github_url(github_url)
 
     def run_install_test(self, library_id: str, version: str) -> bool:
         """

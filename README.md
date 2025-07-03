@@ -7,6 +7,7 @@ A CLI tool that automates the process of adding libraries to [Compiler Explorer]
 - 🚀 Interactive CLI for adding libraries to Compiler Explorer
 - 🦀 **Rust support** - Fully automated with `ce_install` integration
 - ⚡ **C++ support** - Automated library detection and properties generation
+- 🔧 **Fortran support** - FPM package integration with properties management
 - 🔐 Multiple authentication methods (OAuth, GitHub CLI, Personal Access Token)
 - 🍴 Automatic forking of repositories for users without write access
 - 📝 Preview changes with `--verify` flag before committing
@@ -68,6 +69,9 @@ export GITHUB_TOKEN=your_github_token
 # Add a C++ library from GitHub
 ./run.sh --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
 
+# Add a Fortran library from GitHub
+./run.sh --lang=fortran --lib=https://github.com/jacobwilliams/json-fortran --ver=8.5.0
+
 # With OAuth authentication
 ./run.sh --oauth --lang=rust --lib=ahash --ver=0.8.12
 
@@ -103,11 +107,11 @@ The tool supports three authentication methods:
 
 Currently supported:
 - **Rust** - Fully automated using `ce_install` utilities
-- **C++** - Automated library detection and properties generation
+- **C++** - Automated library detection and properties generation  
+- **Fortran** - FPM package integration with properties management
 
 Planned support:
 - C
-- Fortran
 - Java
 - Kotlin
 
@@ -147,6 +151,27 @@ Planned support:
 6. **File Updates**:
    - Updates `bin/yaml/libraries.yaml` in the infra repository
    - Updates C++ properties files in the main repository
+7. **Review** (optional) - Shows diffs with `--verify` flag
+8. **Commit & Push** - Commits changes and pushes to your fork
+9. **Pull Requests** - Creates PRs from your fork to the upstream repositories
+
+### For Fortran Libraries
+
+1. **Authentication** - Authenticates with GitHub (if token/OAuth provided)
+2. **Forking** - Automatically creates or uses existing forks of:
+   - `compiler-explorer/compiler-explorer`
+   - `compiler-explorer/infra`
+3. **Setup** - Clones repositories and sets up environment
+4. **Library Validation**:
+   - Validates that the library has `fpm.toml` file (required for FPM packages)
+   - Generates library ID from GitHub URL following naming conventions
+5. **Library Addition**:
+   - Uses `ce_install fortran-library add` to add the library to `libraries.yaml`
+   - Updates `libs=` line in `fortran.amazon.properties`
+   - Adds library property definitions to the properties file
+6. **File Updates**:
+   - Updates `bin/yaml/libraries.yaml` in the infra repository
+   - Updates `etc/config/fortran.amazon.properties` in the main repository
 7. **Review** (optional) - Shows diffs with `--verify` flag
 8. **Commit & Push** - Commits changes and pushes to your fork
 9. **Pull Requests** - Creates PRs from your fork to the upstream repositories
