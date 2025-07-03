@@ -49,7 +49,6 @@ class FortranHandler:
                 tmp_path = Path(tmp_dir)
                 clone_path = tmp_path / "repo"
 
-                # Clone the repository
                 result = run_command(
                     ["git", "clone", str(github_url), str(clone_path)], debug=self.debug
                 )
@@ -57,7 +56,6 @@ class FortranHandler:
                 if result.returncode != 0:
                     return False, f"Failed to clone repository: {result.stderr}"
 
-                # Check for fmp.toml file
                 fmp_toml = clone_path / "fpm.toml"
                 if not fmp_toml.exists():
                     return (
@@ -88,16 +86,13 @@ class FortranHandler:
             if not config.github_url:
                 raise ValueError("GitHub URL is required for Fortran libraries")
 
-            # Validate the package has fmp.toml
             is_valid, error_msg = self.validate_fpm_package(config.github_url)
             if not is_valid:
                 logger.error(f"Fortran package validation failed: {error_msg}")
                 return None
 
-            # Generate library ID if not provided
             library_id = config.library_id or self.suggest_library_id(config.github_url)
 
-            # Add library using ce_install
             result = run_ce_install_command(
                 ["fortran-library", "add", str(config.github_url), config.version],
                 cwd=self.infra_path,
@@ -131,14 +126,11 @@ class FortranHandler:
                 logger.error(f"Fortran properties file not found: {props_file}")
                 return False
 
-            # Read existing properties
             with open(props_file, encoding="utf-8") as f:
                 content = f.read()
 
-            # Generate version key (sanitized version number)
             version_key = re.sub(r"[^a-z0-9]", "", config.version.lower())
 
-            # Generate library properties
             library_props = []
             library_props.append(f"libs.{library_id}.name={library_id}")
             library_props.append(f"libs.{library_id}.url={config.github_url}")
@@ -153,17 +145,15 @@ class FortranHandler:
                 f"libs.{library_id}.versions.{version_key}.version={config.version}"
             )
 
-            # Update the libs= line to include the new library
             content = update_properties_libs_line(content, library_id)
 
-            # Find the insertion point - right before the tools section
+            # Find insertion point before tools section
             tools_section_match = re.search(
                 r"\n(#{33}\n#{33}\n# Installed tools)",
                 content,
             )
 
             if tools_section_match:
-                # Insert before tools section
                 insertion_point = tools_section_match.start()
                 new_content = (
                     content[:insertion_point]
@@ -173,10 +163,8 @@ class FortranHandler:
                     + content[insertion_point:]
                 )
             else:
-                # Append to end if tools section not found
                 new_content = content + "\n\n" + "\n".join(library_props) + "\n"
 
-            # Write updated properties
             with open(props_file, "w", encoding="utf-8") as f:
                 f.write(new_content)
 

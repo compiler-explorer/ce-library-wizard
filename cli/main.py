@@ -82,7 +82,6 @@ def process_cpp_library(
                 click.echo("CHANGES TO BE COMMITTED:")
                 click.echo("=" * 60)
 
-                # Show infra repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_INFRA_REPO}")
                 click.echo("-" * 60)
                 infra_diff = git_mgr.get_diff(infra_repo_path)
@@ -91,7 +90,6 @@ def process_cpp_library(
                 else:
                     click.echo("No changes detected")
 
-                # Show main repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_MAIN_REPO}")
                 click.echo("-" * 60)
                 main_diff = git_mgr.get_diff(main_repo_path)
@@ -102,7 +100,6 @@ def process_cpp_library(
 
                 click.echo("\n" + "=" * 60)
 
-                # Ask for confirmation
                 if not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
                     return
@@ -218,7 +215,6 @@ def process_rust_library(
                 click.echo("CHANGES TO BE COMMITTED:")
                 click.echo("=" * 60)
 
-                # Show infra repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_INFRA_REPO}")
                 click.echo("-" * 60)
                 infra_diff = git_mgr.get_diff(infra_repo_path)
@@ -227,7 +223,6 @@ def process_rust_library(
                 else:
                     click.echo("No changes detected")
 
-                # Show main repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_MAIN_REPO}")
                 click.echo("-" * 60)
                 main_diff = git_mgr.get_diff(main_repo_path)
@@ -238,7 +233,6 @@ def process_rust_library(
 
                 click.echo("\n" + "=" * 60)
 
-                # Ask for confirmation
                 if not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
                     return
@@ -302,7 +296,6 @@ def process_fortran_library(
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
-        # Create feature branches
         library_name = config.library_id or FortranHandler.suggest_library_id_static(
             config.github_url
         )
@@ -312,33 +305,28 @@ def process_fortran_library(
         git_mgr.create_branch(infra_repo_path, infra_branch)
         git_mgr.create_branch(main_repo_path, main_branch)
 
-        # Handle Fortran specific operations
         click.echo("Running ce_install to add Fortran library...")
         fortran_handler = FortranHandler(infra_repo_path, main_repo_path, debug=debug)
 
         try:
-            # Add library to libraries.yaml
             library_id = fortran_handler.add_library(config)
             if not library_id:
                 click.echo("❌ Failed to add library to libraries.yaml", err=True)
                 return
 
-            # Update main repo with library properties
             click.echo("Updating fortran.amazon.properties...")
-            config.library_id = library_id  # Ensure library_id is set
+            config.library_id = library_id
             if not fortran_handler.update_fortran_properties(library_id, config):
                 click.echo("❌ Failed to update Fortran properties", err=True)
                 return
 
             click.echo("✓ Modified libraries.yaml and updated properties")
 
-            # Show diffs if verify flag is set
             if verify:
                 click.echo("\n" + "=" * 60)
                 click.echo("CHANGES TO BE COMMITTED:")
                 click.echo("=" * 60)
 
-                # Show infra repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_INFRA_REPO}")
                 click.echo("-" * 60)
                 infra_diff = git_mgr.get_diff(infra_repo_path)
@@ -347,7 +335,6 @@ def process_fortran_library(
                 else:
                     click.echo("No changes detected")
 
-                # Show main repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_MAIN_REPO}")
                 click.echo("-" * 60)
                 main_diff = git_mgr.get_diff(main_repo_path)
@@ -358,12 +345,10 @@ def process_fortran_library(
 
                 click.echo("\n" + "=" * 60)
 
-                # Ask for confirmation
                 if not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
                     return
 
-            # Commit changes
             commit_msg = f"Add Fortran library {library_id} v{config.version}"
 
             infra_committed = git_mgr.commit_changes(infra_repo_path, commit_msg)
