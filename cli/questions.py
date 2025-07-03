@@ -31,7 +31,7 @@ def ask_library_questions() -> LibraryConfig:
         rust_version_question = [
             inquirer.Text(
                 "version",
-                message="What's the version of the crate?",
+                message="What's the version(s) of the crate? (comma-separated for multiple)",
                 validate=lambda _, x: len(x.strip()) > 0,
             )
         ]
@@ -55,7 +55,10 @@ def ask_library_questions() -> LibraryConfig:
     version_question = [
         inquirer.Text(
             "version",
-            message="What's the version of library that you want to add?",
+            message=(
+                "What's the version(s) of library that you want to add? "
+                "(comma-separated for multiple)"
+            ),
             validate=lambda _, x: len(x.strip()) > 0,
         )
     ]

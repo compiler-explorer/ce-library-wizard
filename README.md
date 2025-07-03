@@ -16,9 +16,11 @@ See the [Quick Start Guide](docs/quick-start.md) for more examples.
 ## Features
 
 - 🚀 Interactive CLI for adding libraries to Compiler Explorer
-- 🦀 **Rust** - Fully automated with crate support
+- 🦀 **Rust** - Fully automated with crate support + bulk top 100 crates
+- ⚔️ **C** - Shared/static library support  
 - ⚡ **C++** - Smart library type detection
 - 🔧 **Fortran** - FPM package integration
+- 🔢 **Multi-version** - Add multiple versions in one command
 - 🔐 Multiple authentication methods
 - 🍴 Automatic GitHub fork management
 - 📝 Preview changes before committing
