@@ -13,7 +13,7 @@ from core.file_modifications import update_rust_properties
 from core.fortran_handler import FortranHandler
 from core.git_operations import GitManager
 from core.github_auth import get_github_token_via_gh_cli, get_github_token_via_oauth
-from core.models import Language, LibraryConfig
+from core.models import Language, LibraryConfig, LibraryType
 from core.rust_handler import RustLibraryHandler
 from core.subprocess_utils import run_ce_install_command
 from core.ui_utils import (
@@ -718,6 +718,13 @@ def process_fortran_library(
 )
 @click.option("--lib", help="Library name (for Rust) or GitHub URL (for other languages)")
 @click.option("--ver", help="Library version (comma-separated for multiple versions)")
+@click.option(
+    "--type",
+    type=click.Choice(
+        ["header-only", "packaged-headers", "static", "shared", "cshared"], case_sensitive=False
+    ),
+    help="Library type (for C/C++ libraries)",
+)
 def main(
     debug: bool,
     github_token: str | None,
@@ -729,6 +736,7 @@ def main(
     lang: str | None,
     lib: str | None,
     ver: str | None,
+    type: str | None,
 ):
     """CLI tool to add libraries to Compiler Explorer"""
     if debug:
@@ -781,6 +789,18 @@ def main(
                     config.library_id = CppHandler.suggest_library_id_static(lib)
                 elif language == Language.FORTRAN:
                     config.library_id = FortranHandler.suggest_library_id_static(lib)
+
+                # Set library type if provided
+                if type:
+                    type_map = {
+                        "header-only": LibraryType.HEADER_ONLY,
+                        "packaged-headers": LibraryType.PACKAGED_HEADERS,
+                        "static": LibraryType.STATIC,
+                        "shared": LibraryType.SHARED,
+                        "cshared": LibraryType.CSHARED,
+                    }
+                    config.library_type = type_map[type.lower()]
+                    click.echo(f"✓ Using specified library type: {config.library_type.value}")
 
                 # Normalize versions by checking git tags
                 click.echo("Checking git tags for version format...")

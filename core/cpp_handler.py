@@ -94,6 +94,9 @@ class CppHandler:
             elif lib_type == "shared":
                 logger.info(f"Using existing configuration: {library_id} is shared")
                 return True, LibraryType.SHARED
+            elif lib_type == "cshared":
+                logger.info(f"Using existing configuration: {library_id} is cshared")
+                return True, LibraryType.CSHARED
 
             # If it's type: github with no explicit build_type, it might be header-only by default
             if lib_type == "github" and build_type is None:
@@ -153,7 +156,11 @@ class CppHandler:
 
             if config.library_type:
                 subcommand.extend(["--type", config.library_type.value])
+                logger.info(f"Adding library with type: {config.library_type.value}")
+            else:
+                logger.warning("No library type specified for cpp-library add command")
 
+            logger.info(f"Running command: {' '.join(subcommand)}")
             result = run_ce_install_command(subcommand, cwd=self.infra_path, debug=self.debug)
 
             if result.returncode != 0:
@@ -187,6 +194,21 @@ class CppHandler:
 
             if library_id:
                 logger.info(f"Successfully added C++ library with ID: {library_id}")
+
+                # Debug: Check what was actually written to libraries.yaml
+                try:
+                    existing_config = check_existing_library_config(
+                        str(config.github_url), library_id, self.infra_path
+                    )
+                    if existing_config:
+                        logger.info(f"Library config in libraries.yaml: {existing_config}")
+                    else:
+                        logger.warning(
+                            f"Could not find {library_id} in libraries.yaml after adding"
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not check libraries.yaml: {e}")
+
                 return library_id
             else:
                 logger.warning("Could not parse library ID from output, using suggested ID")

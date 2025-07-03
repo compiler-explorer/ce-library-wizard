@@ -46,8 +46,11 @@ gh auth login
 # Add a Rust library
 ./run.sh --lang=rust --lib=serde --ver=1.0.195
 
-# Add a C++ library
+# Add a C++ library with automatic type detection
 ./run.sh --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
+
+# Add a header-only C++ library
+./run.sh --lang=cpp --lib=https://github.com/bobluppes/graaf --ver=v1.1.1 --type=header-only
 
 # Preview changes first
 ./run.sh --verify --lang=rust --lib=tokio --ver=1.35.0

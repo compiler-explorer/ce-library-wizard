@@ -71,6 +71,21 @@ Get detailed output for troubleshooting:
 ./run.sh --debug --lang=cpp --lib=https://github.com/nlohmann/json --ver=3.11.3
 ```
 
+### Specify Library Type (C/C++ only)
+Skip automatic detection and specify the library type directly:
+```bash
+# Header-only library
+./run.sh --lang=cpp --lib=https://github.com/bobluppes/graaf --ver=v1.1.1 --type=header-only
+
+# Packaged headers library  
+./run.sh --lang=cpp --lib=https://github.com/eigen/eigen --ver=3.4.0 --type=packaged-headers
+
+# Shared library (requires compilation)
+./run.sh --lang=c --lib=https://github.com/curl/curl --ver=8.5.0 --type=cshared
+```
+
+Valid types: `header-only`, `packaged-headers`, `static`, `shared`, `cshared`
+
 ### Test Installation (C++ only)
 Validate that the library installs correctly:
 ```bash
