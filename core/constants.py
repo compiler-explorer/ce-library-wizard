@@ -1,9 +1,7 @@
 """Shared constants for the CE Library Wizard."""
 
 # PR and Git Messages
-PR_FOOTER = (
-    "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
-)
+PR_FOOTER = "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-library-wizard)_"
 
 # Authentication Messages
 AUTH_WARNING_NO_GITHUB = (
@@ -27,8 +25,9 @@ SUCCESS_CREATED_PR = "\n✓ Created PR:"
 SUCCESS_MODIFIED_FILES = "✓ Modified libraries.yaml and updated properties"
 
 # File Paths
-FORTRAN_PROPERTIES_PATH = "etc/config/fortran.amazon.properties"
+C_PROPERTIES_PATH = "etc/config/c.amazon.properties"
 CPP_PROPERTIES_PATH = "etc/config/c++.amazon.properties"
+FORTRAN_PROPERTIES_PATH = "etc/config/fortran.amazon.properties"
 RUST_PROPERTIES_PATH = "etc/config/rust.amazon.properties"
 LIBRARIES_YAML_PATH = "bin/yaml/libraries.yaml"
 

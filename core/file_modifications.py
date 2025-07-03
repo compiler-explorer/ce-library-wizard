@@ -70,6 +70,10 @@ def update_rust_properties(repo_path: Path, new_props_content: str):
         libs_end = tools_match.start()
 
     # Build the new content
+    # Ensure new_props_content ends with a newline to avoid end-of-file issues
+    if not new_props_content.endswith("\n"):
+        new_props_content += "\n"
+
     new_content = (
         current_content[:libs_start]
         + new_props_content  # Everything before libs=

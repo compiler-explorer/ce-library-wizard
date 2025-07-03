@@ -47,12 +47,12 @@ class RustLibraryHandler:
                 # Run make ce on Linux/Mac with explicit Python path
                 extra_env = {"PYTHON": python_path} if python_path else None
 
-            if self.debug:
-                print(f"\nRunning command: {' '.join(cmd)}")
-                print(f"Working directory: {self.infra_repo_path}")
-
             # Run the command
             if self.is_windows:
+                if self.debug:
+                    print(f"\nRunning command: {' '.join(cmd)}")
+                    print(f"Working directory: {self.infra_repo_path}")
+
                 # Windows PowerShell command
                 result = run_command(
                     cmd,
@@ -62,6 +62,10 @@ class RustLibraryHandler:
                     debug=self.debug,
                 )
             else:
+                if self.debug:
+                    print("\nRunning make ce")
+                    print(f"Working directory: {self.infra_repo_path}")
+
                 # Unix make command
                 if self.debug and extra_env:
                     extra_env["VERBOSE"] = "1"

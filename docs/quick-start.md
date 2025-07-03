@@ -29,6 +29,11 @@ Skip the interactive prompts by providing all options:
 ./run.sh --lang=rust --lib=serde --ver=1.0.195
 ```
 
+**C library:**
+```bash
+./run.sh --lang=c --lib=https://github.com/libuv/libuv --ver=1.46.0
+```
+
 **C++ library:**
 ```bash
 ./run.sh --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
@@ -76,6 +81,18 @@ Validate that the library installs correctly:
 For debugging, keep the temporary directories after the tool exits:
 ```bash
 ./run.sh --keep-temp --lang=rust --lib=serde --ver=1.0.195
+```
+
+### Add Multiple Versions
+Add multiple versions of the same library in one operation:
+```bash
+./run.sh --lang=rust --lib=serde --ver=1.0.193,1.0.194,1.0.195
+```
+
+### Add Top 100 Rust Crates
+Add the most popular Rust crates in bulk:
+```bash
+./run.sh --top-rust-crates
 ```
 
 ## What Happens Next?
