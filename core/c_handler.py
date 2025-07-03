@@ -73,7 +73,8 @@ class CHandler:
 
     def add_library(self, config: LibraryConfig) -> str | None:
         """
-        Add a C library using ce_install cpp-library utilities (C libraries use the same commands).
+        Add a C shared library using cpp-library add with --type cshared.
+        C libraries are added to the C++ section in libraries.yaml with cshared type.
 
         Args:
             config: Library configuration
@@ -82,11 +83,15 @@ class CHandler:
             Library ID if successful, None otherwise
         """
         try:
-            # Use cpp-library commands for C libraries since ce_install doesn't have c-library
-            subcommand = ["cpp-library", "add", str(config.github_url), config.version]
-
-            if config.library_type:
-                subcommand.extend(["--type", config.library_type.value])
+            # Add C library to C++ section with cshared type
+            subcommand = [
+                "cpp-library",
+                "add",
+                str(config.github_url),
+                config.version,
+                "--type",
+                "cshared",
+            ]
 
             result = run_ce_install_command(subcommand, cwd=self.infra_path, debug=self.debug)
 
@@ -95,7 +100,7 @@ class CHandler:
                 logger.error(f"cpp-library add failed: {error_output}")
                 return None
 
-            # Parse the output to get the library ID (same logic as C++)
+            # Parse the output to get the library ID
             output = result.stdout.strip()
 
             import re
@@ -115,7 +120,7 @@ class CHandler:
                     break
 
             if library_id:
-                logger.info(f"Successfully added C library with ID: {library_id}")
+                logger.info(f"Successfully added C shared library with ID: {library_id}")
                 return library_id
             else:
                 logger.warning("Could not parse library ID from output, using suggested ID")
@@ -127,7 +132,8 @@ class CHandler:
 
     def generate_properties(self, library_id: str, version: str) -> bool:
         """
-        Generate C properties file from libraries.yaml.
+        Generate properties for both C++ and C properties files.
+        C shared libraries with lib_type: cshared should be available to both C and C++ compilers.
 
         Args:
             library_id: The library identifier
@@ -141,25 +147,48 @@ class CHandler:
                 logger.error("Main repository path not provided")
                 return False
 
-            # Generate Linux properties for C libraries using cpp-library commands
-            props_file = self.main_path / "etc" / "config" / "c.amazon.properties"
-            subcommand_linux = [
+            # Generate C++ properties first
+            cpp_props_file = self.main_path / "etc" / "config" / "c++.amazon.properties"
+            subcommand_cpp = [
                 "cpp-library",
                 "generate-linux-props",
                 "--input-file",
-                str(props_file),
+                str(cpp_props_file),
                 "--output-file",
-                str(props_file),
+                str(cpp_props_file),
                 "--library",
                 library_id,
                 "--version",
                 version,
             ]
 
-            result = run_ce_install_command(subcommand_linux, cwd=self.infra_path, debug=self.debug)
+            result = run_ce_install_command(subcommand_cpp, cwd=self.infra_path, debug=self.debug)
 
             if result.returncode != 0:
-                logger.error(f"generate-linux-props failed: {result.stderr}")
+                logger.error(f"generate-linux-props for C++ failed: {result.stderr}")
+                return False
+
+            logger.info("Successfully generated Linux C++ properties")
+
+            # Generate C properties
+            c_props_file = self.main_path / "etc" / "config" / "c.amazon.properties"
+            subcommand_c = [
+                "cpp-library",
+                "generate-linux-props",
+                "--input-file",
+                str(c_props_file),
+                "--output-file",
+                str(c_props_file),
+                "--library",
+                library_id,
+                "--version",
+                version,
+            ]
+
+            result = run_ce_install_command(subcommand_c, cwd=self.infra_path, debug=self.debug)
+
+            if result.returncode != 0:
+                logger.error(f"generate-linux-props for C failed: {result.stderr}")
                 return False
 
             logger.info("Successfully generated Linux C properties")
@@ -268,23 +297,30 @@ class CHandler:
                 logger.warning("Skipping path consistency check")
                 return True
 
-            # Check if destination path is in the properties file
+            # Check if destination path is in both properties files
             if self.main_path:
-                props_file = self.main_path / "etc" / "config" / "c.amazon.properties"
-                if props_file.exists():
-                    props_content = props_file.read_text()
-                    if destination_path not in props_content:
-                        logger.error(
-                            f"Inconsistency detected: Destination path "
-                            f"'{destination_path}' not found in properties file"
+                props_files = [
+                    self.main_path / "etc" / "config" / "c++.amazon.properties",
+                    self.main_path / "etc" / "config" / "c.amazon.properties",
+                ]
+
+                for props_file in props_files:
+                    if props_file.exists():
+                        props_content = props_file.read_text()
+                        if destination_path not in props_content:
+                            logger.error(
+                                f"Inconsistency detected: Destination path "
+                                f"'{destination_path}' not found in {props_file.name}"
+                            )
+                            logger.error(
+                                "This suggests the properties file and library "
+                                "configuration are out of sync"
+                            )
+                            return False
+                    else:
+                        logger.warning(
+                            f"Properties file {props_file.name} not found for verification"
                         )
-                        logger.error(
-                            "This suggests the properties file and library "
-                            "configuration are out of sync"
-                        )
-                        return False
-                else:
-                    logger.warning("Properties file not found for verification")
 
             logger.info("Path check succeeded")
             return True
