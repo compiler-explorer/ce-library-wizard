@@ -6,8 +6,8 @@ A CLI tool that automates the process of adding libraries to [Compiler Explorer]
 
 ```bash
 # Clone and run
-git clone https://github.com/compiler-explorer/ce-lib-wizard.git
-cd ce-lib-wizard
+git clone https://github.com/compiler-explorer/ce-library-wizard.git
+cd ce-library-wizard
 ./run.sh
 ```
 
