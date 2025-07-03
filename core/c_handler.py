@@ -2,17 +2,21 @@
 from __future__ import annotations
 
 import logging
-import tempfile
 from pathlib import Path
 
 from .library_utils import (
-    setup_ce_install as setup_ce_install_shared,
-)
-from .library_utils import (
+    build_ce_install_command,
+    check_ce_install_link_support,
+    clone_and_analyze_repository,
+    detect_library_type_from_analysis,
+    get_link_targets_from_analysis,
     suggest_library_id_from_github_url,
 )
+from .library_utils import (
+    setup_ce_install as setup_ce_install_shared,
+)
 from .models import LibraryConfig, LibraryType, check_existing_library_config
-from .subprocess_utils import run_ce_install_command, run_command
+from .subprocess_utils import run_ce_install_command
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +52,7 @@ class CHandler:
             Tuple of (is_valid, library_type)
         """
         # First check if library already exists and use its configuration
+        existing_config = None
         if (
             library_id
             and hasattr(self, "infra_path")
@@ -55,51 +60,25 @@ class CHandler:
             and self.infra_path.exists()
         ):
             existing_config = check_existing_library_config(github_url, library_id, self.infra_path)
-            if existing_config:
-                # Library exists, try to determine type from existing config
-                if existing_config.get("type") == "header-only":
-                    logger.info(f"Using existing configuration: {library_id} is header-only")
-                    return True, LibraryType.HEADER_ONLY
-                elif existing_config.get("type") == "packaged-headers":
-                    logger.info(f"Using existing configuration: {library_id} is packaged-headers")
-                    return True, LibraryType.PACKAGED_HEADERS
-                elif existing_config.get("type") == "static":
-                    logger.info(f"Using existing configuration: {library_id} is static")
-                    return True, LibraryType.STATIC
-                elif existing_config.get("type") == "shared":
-                    logger.info(f"Using existing configuration: {library_id} is shared")
-                    return True, LibraryType.SHARED
-                elif existing_config.get("type") == "cshared":
-                    logger.info(f"Using existing configuration: {library_id} is cshared")
-                    return True, LibraryType.CSHARED
-                # If existing config doesn't have clear type info, continue with detection
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            clone_path = Path(tmpdir) / "repo"
+        # Clone and analyze the repository
+        success, analysis = clone_and_analyze_repository(github_url)
+        if not success:
+            return False, None
 
-            try:
-                result = run_command(
-                    ["git", "clone", "--depth", "1", github_url, str(clone_path)], clean_env=False
-                )
+        # Determine library type from analysis and existing config
+        is_valid, library_type_value = detect_library_type_from_analysis(analysis, existing_config)
+        if not is_valid:
+            return False, None
 
-                if result.returncode != 0:
-                    logger.error(f"Failed to clone repository: {result.stderr}")
-                    return False, None
+        # For C libraries, prefer shared/cshared over other types when CMake is detected
+        if library_type_value == "packaged-headers" and analysis.get("has_cmake"):
+            library_type_value = "shared"
 
-                # Check for CMakeLists.txt existence
-                cmake_file = clone_path / "CMakeLists.txt"
-                has_cmake = cmake_file.exists()
+        # Convert string value back to LibraryType enum
+        library_type = LibraryType(library_type_value)
 
-                if has_cmake:
-                    # Has CMakeLists.txt, assume it's a shared/static library
-                    return True, LibraryType.SHARED
-                else:
-                    # No CMakeLists.txt, likely header-only
-                    return True, LibraryType.HEADER_ONLY
-
-            except Exception as e:
-                logger.error(f"Error detecting library type: {e}")
-                return False, None
+        return True, library_type
 
     def add_library(self, config: LibraryConfig) -> str | None:
         """
@@ -113,15 +92,27 @@ class CHandler:
             Library ID if successful, None otherwise
         """
         try:
-            # Add C library to C++ section with cshared type
-            subcommand = [
-                "cpp-library",
-                "add",
-                str(config.github_url),
-                config.version,
-                "--type",
-                "cshared",
-            ]
+            # Build command for C library (using cshared type)
+            logger.info("Detecting CMake targets for C shared library link configuration...")
+            success, analysis = clone_and_analyze_repository(str(config.github_url))
+
+            link_targets = None
+            if success:
+                link_targets = get_link_targets_from_analysis(analysis, "cshared")
+
+                if link_targets:
+                    logger.info(
+                        f"Detected {len(link_targets)} CMake targets: {', '.join(link_targets[:5])}"
+                        + (f" and {len(link_targets)-5} more" if len(link_targets) > 5 else "")
+                    )
+                else:
+                    logger.warning("No suitable CMake targets found for linking")
+            else:
+                logger.warning("Could not analyze repository for CMake targets")
+
+            # Check ce_install link support and build command
+            link_support = check_ce_install_link_support(self.infra_path)
+            subcommand = build_ce_install_command(config, "cshared", link_targets, link_support)
 
             result = run_ce_install_command(subcommand, cwd=self.infra_path, debug=self.debug)
 

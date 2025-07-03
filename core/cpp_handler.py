@@ -3,14 +3,18 @@ from __future__ import annotations
 
 import logging
 import re
-import tempfile
 from pathlib import Path
 
 from .library_utils import (
-    setup_ce_install as setup_ce_install_shared,
+    build_ce_install_command,
+    check_ce_install_link_support,
+    clone_and_analyze_repository,
+    detect_library_type_from_analysis,
+    get_link_targets_from_analysis,
+    suggest_library_id_from_github_url,
 )
 from .library_utils import (
-    suggest_library_id_from_github_url,
+    setup_ce_install as setup_ce_install_shared,
 )
 from .models import (
     LibraryConfig,
@@ -18,7 +22,7 @@ from .models import (
     check_existing_library_config,
     check_existing_library_config_remote,
 )
-from .subprocess_utils import run_ce_install_command, run_command
+from .subprocess_utils import run_ce_install_command
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +49,13 @@ class CppHandler:
 
     def detect_library_type(
         self, github_url: str, library_id: str | None = None
-    ) -> tuple[bool, LibraryType | None]:
+    ) -> tuple[bool, LibraryType | None, list[str] | None]:
         """
         Clone repository and detect if it's header-only by checking for CMakeLists.txt.
         Also checks existing library configuration if available.
 
         Returns:
-            Tuple of (is_valid, library_type)
+            Tuple of (is_valid, library_type, cmake_targets)
         """
         # First check if library already exists and use its configuration
         existing_config = None
@@ -69,76 +73,20 @@ class CppHandler:
             logger.info(f"Checking for existing configuration of {library_id}...")
             existing_config = check_existing_library_config_remote(github_url, library_id)
 
-        if existing_config:
-            # Library exists, try to determine type from existing config
+        # Clone and analyze the repository
+        success, analysis = clone_and_analyze_repository(github_url)
+        if not success:
+            return False, None, None
 
-            # Check if it's explicitly marked as header-only via build_type
-            build_type = existing_config.get("build_type")
-            if build_type == "none":
-                logger.info(
-                    f"Using existing configuration: {library_id} is header-only (build_type: none)"
-                )
-                return True, LibraryType.HEADER_ONLY
+        # Determine library type from analysis and existing config
+        is_valid, library_type_value = detect_library_type_from_analysis(analysis, existing_config)
+        if not is_valid:
+            return False, None, None
 
-            # Check legacy type field
-            lib_type = existing_config.get("type")
-            if lib_type == "header-only":
-                logger.info(f"Using existing configuration: {library_id} is header-only")
-                return True, LibraryType.HEADER_ONLY
-            elif lib_type == "packaged-headers":
-                logger.info(f"Using existing configuration: {library_id} is packaged-headers")
-                return True, LibraryType.PACKAGED_HEADERS
-            elif lib_type == "static":
-                logger.info(f"Using existing configuration: {library_id} is static")
-                return True, LibraryType.STATIC
-            elif lib_type == "shared":
-                logger.info(f"Using existing configuration: {library_id} is shared")
-                return True, LibraryType.SHARED
-            elif lib_type == "cshared":
-                logger.info(f"Using existing configuration: {library_id} is cshared")
-                return True, LibraryType.CSHARED
+        # Convert string value back to LibraryType enum
+        library_type = LibraryType(library_type_value)
 
-            # If it's type: github with no explicit build_type, it might be header-only by default
-            if lib_type == "github" and build_type is None:
-                logger.info(
-                    f"Using existing configuration: {library_id} is likely header-only "
-                    f"(type: github, no build_type)"
-                )
-                return True, LibraryType.HEADER_ONLY
-
-            # If existing config doesn't have clear type info, continue with detection
-            logger.warning(
-                f"Could not determine type from existing config for {library_id}, "
-                f"falling back to detection"
-            )
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            clone_path = Path(tmpdir) / "repo"
-
-            try:
-                # Clone the repository
-                result = run_command(
-                    ["git", "clone", "--depth", "1", github_url, str(clone_path)], clean_env=False
-                )
-
-                if result.returncode != 0:
-                    logger.error(f"Failed to clone repository: {result.stderr}")
-                    return False, None
-
-                # Check for CMakeLists.txt existence
-                cmake_file = clone_path / "CMakeLists.txt"
-                has_cmake = cmake_file.exists()
-
-                if has_cmake:
-                    # Has CMakeLists.txt, assume it's a packaged-headers library
-                    return True, LibraryType.PACKAGED_HEADERS
-                else:
-                    # No CMakeLists.txt, could be header-only or require manual configuration
-                    return True, LibraryType.HEADER_ONLY
-
-            except Exception as e:
-                logger.error(f"Error detecting library type: {e}")
-                return False, None
+        return True, library_type, analysis.get("cmake_targets")
 
     def add_library(self, config: LibraryConfig) -> str | None:
         """
@@ -151,14 +99,43 @@ class CppHandler:
             Library ID if successful, None otherwise
         """
         try:
-            # Run ce_install cpp-library add command
-            subcommand = ["cpp-library", "add", str(config.github_url), config.version]
+            # Initialize subcommand
+            subcommand = None
 
-            if config.library_type:
-                subcommand.extend(["--type", config.library_type.value])
-                logger.info(f"Adding library with type: {config.library_type.value}")
-            else:
-                logger.warning("No library type specified for cpp-library add command")
+            # For shared/static libraries, detect CMake targets and add them if supported
+            if config.library_type in [LibraryType.SHARED, LibraryType.STATIC, LibraryType.CSHARED]:
+                logger.info("Detecting CMake targets for link configuration...")
+                # Clone and analyze repository for link targets
+                success, analysis = clone_and_analyze_repository(str(config.github_url))
+
+                if success:
+                    link_targets = get_link_targets_from_analysis(
+                        analysis, config.library_type.value
+                    )
+
+                    if link_targets:
+                        logger.info(
+                            f"Detected {len(link_targets)} CMake targets: "
+                            f"{', '.join(link_targets[:5])}"
+                            + (f" and {len(link_targets)-5} more" if len(link_targets) > 5 else "")
+                        )
+
+                        # Check ce_install link support and build command
+                        link_support = check_ce_install_link_support(self.infra_path)
+                        subcommand = build_ce_install_command(
+                            config, config.library_type.value, link_targets, link_support
+                        )
+                    else:
+                        logger.warning("No suitable CMake targets found for linking")
+                else:
+                    logger.warning("Could not analyze repository for CMake targets")
+
+            # If we haven't already built the command with link targets, do it now
+            if subcommand is None:
+                library_type_value = config.library_type.value if config.library_type else None
+                if not library_type_value:
+                    logger.warning("No library type specified for cpp-library add command")
+                subcommand = build_ce_install_command(config, library_type_value, None, {})
 
             logger.info(f"Running command: {' '.join(subcommand)}")
             result = run_ce_install_command(subcommand, cwd=self.infra_path, debug=self.debug)
@@ -194,6 +171,8 @@ class CppHandler:
 
             if library_id:
                 logger.info(f"Successfully added C++ library with ID: {library_id}")
+                if library_id != config.library_id:
+                    logger.info(f"Library ID changed from '{config.library_id}' to '{library_id}'")
 
                 # Debug: Check what was actually written to libraries.yaml
                 try:
@@ -420,6 +399,7 @@ class CppHandler:
 
             # Log the output for debugging
             if self.debug:
+                logger.debug(f"list-paths command: ce_install list-paths {install_spec}")
                 logger.debug(f"list-paths output: {output}")
 
             # list-paths might have different output format than install
@@ -439,6 +419,8 @@ class CppHandler:
             else:
                 # If no match found, log the output and continue without path check
                 logger.warning("Could not parse destination path from list-paths output")
+                if self.debug:
+                    logger.debug(f"Raw output was: {repr(output)}")
                 logger.warning("Skipping path consistency check")
                 return True
 
@@ -447,16 +429,50 @@ class CppHandler:
                 props_file = self.main_path / "etc" / "config" / "c++.amazon.properties"
                 if props_file.exists():
                     props_content = props_file.read_text()
-                    if destination_path not in props_content:
-                        logger.error(
-                            f"Inconsistency detected: Destination path "
-                            f"'{destination_path}' not found in properties file"
+
+                    # Check for the exact path first
+                    path_found = destination_path in props_content
+
+                    # If not found, try the version without dots (common in properties files)
+                    if not path_found:
+                        version_no_dots = version.replace(".", "")
+                        alternative_path = destination_path.replace(
+                            f"/{version}", f"/{version_no_dots}"
                         )
-                        logger.error(
-                            "This suggests the properties file and library "
-                            "configuration are out of sync"
+                        path_found = alternative_path in props_content
+                        if path_found:
+                            logger.info(f"Found alternative path format: {alternative_path}")
+
+                    if not path_found:
+                        # For existing libraries, check if library and version are present
+                        version_no_dots = version.replace(".", "")
+                        version_entry = (
+                            f"libs.{library_id}.versions.{version_no_dots}.version={version}"
                         )
-                        return False
+
+                        if version_entry in props_content:
+                            logger.info(
+                                f"Path not found, but version entry exists: {version_entry}. "
+                                "This may be normal for existing libraries."
+                            )
+                            logger.info("Skipping path consistency check for existing library")
+                        else:
+                            logger.error(
+                                f"Inconsistency detected: Neither destination path "
+                                f"'{destination_path}' nor version entry '{version_entry}' "
+                                "found in properties file"
+                            )
+                            alt_path = destination_path.replace(
+                                f"/{version}", f"/{version_no_dots}"
+                            )
+                            logger.info(f"Also tried alternative format: {alt_path}")
+                            logger.error(
+                                "This suggests the properties file and library "
+                                "configuration are out of sync"
+                            )
+                            return False
+                    else:
+                        logger.info("Path consistency check passed")
                 else:
                     logger.warning("Properties file not found for verification")
 

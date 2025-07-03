@@ -1,5 +1,6 @@
 import inquirer
 
+from core.library_utils import filter_main_cmake_targets
 from core.models import BuildTool, Language, LibraryConfig, LibraryType, LinkType
 
 
@@ -99,7 +100,7 @@ def ask_library_questions() -> LibraryConfig:
         from pathlib import Path
 
         cpp_handler = CppHandler(Path.home(), setup_ce_install=False, debug=False)
-        is_valid, detected_type = cpp_handler.detect_library_type(
+        is_valid, detected_type, cmake_targets = cpp_handler.detect_library_type(
             github_answer["github_url"], library_id_answer["library_id"]
         )
 
@@ -108,6 +109,14 @@ def ask_library_questions() -> LibraryConfig:
             detected_type = None
         else:
             print(f"✓ Detected library type: {detected_type.value if detected_type else 'Unknown'}")
+            if cmake_targets:
+                main_targets = filter_main_cmake_targets(cmake_targets)
+                if main_targets:
+                    print(
+                        f"✓ Found {len(main_targets)} CMake targets for linking: "
+                        f"{', '.join(main_targets[:3])}"
+                        + (f" and {len(main_targets)-3} more" if len(main_targets) > 3 else "")
+                    )
 
         # Ask about library type with detected value as default
         library_type_choices = [
