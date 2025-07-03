@@ -6,12 +6,16 @@ import traceback
 import click
 
 from cli.questions import ask_library_questions
+from core.constants import PR_FOOTER, SUCCESS_MODIFIED_FILES
 from core.cpp_handler import CppHandler
 from core.file_modifications import update_rust_properties
 from core.fortran_handler import FortranHandler
 from core.git_operations import GitManager
 from core.models import Language, LibraryConfig
 from core.rust_handler import RustLibraryHandler
+from core.ui_utils import (
+    display_authentication_warning,
+)
 
 
 def process_cpp_library(
@@ -135,10 +139,7 @@ def process_cpp_library(
                         pr_body += f"- Library Type: {library_type}"
 
                     if infra_committed:
-                        infra_pr_body = (
-                            pr_body
-                            + "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
-                        )
+                        infra_pr_body = pr_body + PR_FOOTER
                         infra_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_INFRA_REPO, infra_branch, commit_msg, infra_pr_body
                         )
@@ -149,7 +150,7 @@ def process_cpp_library(
                         main_pr_body = pr_body
                         if infra_committed:
                             main_pr_body += f"\n\nRelated PR: {infra_pr_url}"
-                        main_pr_body += "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
+                        main_pr_body += PR_FOOTER
 
                         main_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_MAIN_REPO,
@@ -163,13 +164,7 @@ def process_cpp_library(
                 else:
                     click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
-                click.echo(
-                    "\n⚠️  No GitHub authentication found. Changes committed locally but not pushed."
-                )
-                click.echo("To push changes and create PRs, use one of these options:")
-                click.echo("  - Install and authenticate GitHub CLI: gh auth login")
-                click.echo("  - Set GITHUB_TOKEN environment variable")
-                click.echo("  - Use --oauth flag for browser-based authentication")
+                display_authentication_warning()
 
         except Exception as e:
             click.echo(f"\n❌ Error processing C++ library: {e}", err=True)
@@ -270,13 +265,7 @@ def process_rust_library(
                 click.echo(f"  - Infra: {infra_pr_url}")
                 click.echo(f"  - Main: {main_pr_url}")
             else:
-                click.echo(
-                    "\n⚠️  No GitHub authentication found. Changes committed locally but not pushed."
-                )
-                click.echo("To push changes and create PRs, use one of these options:")
-                click.echo("  - Install and authenticate GitHub CLI: gh auth login")
-                click.echo("  - Set GITHUB_TOKEN environment variable")
-                click.echo("  - Use --oauth flag for browser-based authentication")
+                display_authentication_warning()
 
         except Exception as e:
             click.echo(f"\n❌ Error processing Rust library: {e}", err=True)
@@ -320,7 +309,7 @@ def process_fortran_library(
                 click.echo("❌ Failed to update Fortran properties", err=True)
                 return
 
-            click.echo("✓ Modified libraries.yaml and updated properties")
+            click.echo(SUCCESS_MODIFIED_FILES)
 
             if verify:
                 click.echo("\n" + "=" * 60)
@@ -377,10 +366,7 @@ def process_fortran_library(
                     pr_body += "- Package Manager: FPM (Fortran Package Manager)"
 
                     if infra_committed:
-                        infra_pr_body = (
-                            pr_body
-                            + "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
-                        )
+                        infra_pr_body = pr_body + PR_FOOTER
                         infra_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_INFRA_REPO, infra_branch, commit_msg, infra_pr_body
                         )
@@ -391,7 +377,7 @@ def process_fortran_library(
                         main_pr_body = pr_body
                         if infra_committed:
                             main_pr_body += f"\n\nRelated PR: {infra_pr_url}"
-                        main_pr_body += "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
+                        main_pr_body += PR_FOOTER
 
                         main_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_MAIN_REPO,
@@ -405,13 +391,7 @@ def process_fortran_library(
                 else:
                     click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
-                click.echo(
-                    "\n⚠️  No GitHub authentication found. Changes committed locally but not pushed."
-                )
-                click.echo("To push changes and create PRs, use one of these options:")
-                click.echo("  - Install and authenticate GitHub CLI: gh auth login")
-                click.echo("  - Set GITHUB_TOKEN environment variable")
-                click.echo("  - Use --oauth flag for browser-based authentication")
+                display_authentication_warning()
 
         except Exception as e:
             click.echo(f"\n❌ Error processing Fortran library: {e}", err=True)

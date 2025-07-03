@@ -6,6 +6,7 @@ import re
 import tempfile
 from pathlib import Path
 
+from .constants import FORTRAN_PROPERTIES_PATH, GITHUB_URL_REQUIRED, MAIN_REPO_PATH_REQUIRED
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
@@ -84,7 +85,7 @@ class FortranHandler:
         """
         try:
             if not config.github_url:
-                raise ValueError("GitHub URL is required for Fortran libraries")
+                raise ValueError(GITHUB_URL_REQUIRED.format("Fortran"))
 
             is_valid, error_msg = self.validate_fpm_package(config.github_url)
             if not is_valid:
@@ -116,11 +117,11 @@ class FortranHandler:
         Returns True if successful, False otherwise.
         """
         if not self.main_path:
-            logger.error("Main repository path not provided")
+            logger.error(MAIN_REPO_PATH_REQUIRED)
             return False
 
         try:
-            props_file = self.main_path / "etc" / "config" / "fortran.amazon.properties"
+            props_file = self.main_path / FORTRAN_PROPERTIES_PATH
 
             if not props_file.exists():
                 logger.error(f"Fortran properties file not found: {props_file}")
