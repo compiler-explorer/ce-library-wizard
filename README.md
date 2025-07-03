@@ -194,6 +194,16 @@ Planned support:
 - Internet connection for cloning repositories
 - Poetry (automatically installed by `run.sh` if not present)
 
+## Debugging
+
+To enable verbose output including Poetry installation details, set the debug environment variable:
+
+```bash
+DEBUG=1 ./run.sh --lang=rust --lib=serde --ver=1.0.195
+# or
+CE_DEBUG=1 ./run.sh --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
+```
+
 ## Security Notes
 
 - The tool uses OAuth for secure authentication
