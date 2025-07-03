@@ -19,7 +19,9 @@ class GitManager:
     CE_MAIN_REPO = "compiler-explorer/compiler-explorer"
     CE_INFRA_REPO = "compiler-explorer/infra"
 
-    def __init__(self, github_token: str | None = None, debug: bool = False, keep_temp: bool = False):
+    def __init__(
+        self, github_token: str | None = None, debug: bool = False, keep_temp: bool = False
+    ):
         self.github_token = github_token
         self.debug = debug
         self.keep_temp = keep_temp
