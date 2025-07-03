@@ -2,6 +2,9 @@
 
 # CE Library Wizard runner script
 # This script sets up Poetry and runs the CLI
+#
+# Environment variables:
+#   DEBUG=1 or CE_DEBUG=1  - Enable verbose output including Poetry installation details
 
 set -e
 
@@ -75,7 +78,11 @@ poetry config virtualenvs.in-project true --local 2>/dev/null || true
 
 # Install dependencies
 print_info "Installing dependencies with Poetry..."
-poetry install --no-interaction --no-ansi
+if [[ "${DEBUG:-}" == "1" || "${CE_DEBUG:-}" == "1" ]]; then
+    poetry install --no-interaction --no-ansi
+else
+    poetry install --no-interaction --no-ansi --quiet
+fi
 
 if [ $? -eq 0 ]; then
     print_info "Installation complete!"

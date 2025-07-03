@@ -6,11 +6,16 @@ import traceback
 import click
 
 from cli.questions import ask_library_questions
+from core.constants import PR_FOOTER, SUCCESS_MODIFIED_FILES
 from core.cpp_handler import CppHandler
 from core.file_modifications import update_rust_properties
+from core.fortran_handler import FortranHandler
 from core.git_operations import GitManager
 from core.models import Language, LibraryConfig
 from core.rust_handler import RustLibraryHandler
+from core.ui_utils import (
+    display_authentication_warning,
+)
 
 
 def process_cpp_library(
@@ -81,7 +86,6 @@ def process_cpp_library(
                 click.echo("CHANGES TO BE COMMITTED:")
                 click.echo("=" * 60)
 
-                # Show infra repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_INFRA_REPO}")
                 click.echo("-" * 60)
                 infra_diff = git_mgr.get_diff(infra_repo_path)
@@ -90,7 +94,6 @@ def process_cpp_library(
                 else:
                     click.echo("No changes detected")
 
-                # Show main repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_MAIN_REPO}")
                 click.echo("-" * 60)
                 main_diff = git_mgr.get_diff(main_repo_path)
@@ -101,7 +104,6 @@ def process_cpp_library(
 
                 click.echo("\n" + "=" * 60)
 
-                # Ask for confirmation
                 if not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
                     return
@@ -137,10 +139,7 @@ def process_cpp_library(
                         pr_body += f"- Library Type: {library_type}"
 
                     if infra_committed:
-                        infra_pr_body = (
-                            pr_body
-                            + "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
-                        )
+                        infra_pr_body = pr_body + PR_FOOTER
                         infra_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_INFRA_REPO, infra_branch, commit_msg, infra_pr_body
                         )
@@ -151,7 +150,7 @@ def process_cpp_library(
                         main_pr_body = pr_body
                         if infra_committed:
                             main_pr_body += f"\n\nRelated PR: {infra_pr_url}"
-                        main_pr_body += "\n\n---\n_PR created with [ce-lib-wizard](https://github.com/compiler-explorer/ce-lib-wizard)_"
+                        main_pr_body += PR_FOOTER
 
                         main_pr_url = git_mgr.create_pull_request(
                             GitManager.CE_MAIN_REPO,
@@ -165,13 +164,7 @@ def process_cpp_library(
                 else:
                     click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
-                click.echo(
-                    "\n⚠️  No GitHub authentication found. Changes committed locally but not pushed."
-                )
-                click.echo("To push changes and create PRs, use one of these options:")
-                click.echo("  - Install and authenticate GitHub CLI: gh auth login")
-                click.echo("  - Set GITHUB_TOKEN environment variable")
-                click.echo("  - Use --oauth flag for browser-based authentication")
+                display_authentication_warning()
 
         except Exception as e:
             click.echo(f"\n❌ Error processing C++ library: {e}", err=True)
@@ -217,7 +210,6 @@ def process_rust_library(
                 click.echo("CHANGES TO BE COMMITTED:")
                 click.echo("=" * 60)
 
-                # Show infra repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_INFRA_REPO}")
                 click.echo("-" * 60)
                 infra_diff = git_mgr.get_diff(infra_repo_path)
@@ -226,7 +218,6 @@ def process_rust_library(
                 else:
                     click.echo("No changes detected")
 
-                # Show main repo diff
                 click.echo(f"\n📁 Repository: {GitManager.CE_MAIN_REPO}")
                 click.echo("-" * 60)
                 main_diff = git_mgr.get_diff(main_repo_path)
@@ -237,7 +228,6 @@ def process_rust_library(
 
                 click.echo("\n" + "=" * 60)
 
-                # Ask for confirmation
                 if not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
                     return
@@ -275,16 +265,136 @@ def process_rust_library(
                 click.echo(f"  - Infra: {infra_pr_url}")
                 click.echo(f"  - Main: {main_pr_url}")
             else:
-                click.echo(
-                    "\n⚠️  No GitHub authentication found. Changes committed locally but not pushed."
-                )
-                click.echo("To push changes and create PRs, use one of these options:")
-                click.echo("  - Install and authenticate GitHub CLI: gh auth login")
-                click.echo("  - Set GITHUB_TOKEN environment variable")
-                click.echo("  - Use --oauth flag for browser-based authentication")
+                display_authentication_warning()
 
         except Exception as e:
             click.echo(f"\n❌ Error processing Rust library: {e}", err=True)
+            raise
+
+
+def process_fortran_library(
+    config: LibraryConfig,
+    github_token: str | None = None,
+    verify: bool = False,
+    debug: bool = False,
+):
+    """Process a Fortran library addition"""
+    click.echo(f"\nProcessing Fortran library: {config.library_id or 'unknown'} v{config.version}")
+
+    with GitManager(github_token, debug=debug) as git_mgr:
+        click.echo("Cloning repositories...")
+        main_repo_path, infra_repo_path = git_mgr.clone_repositories()
+
+        library_name = config.library_id or FortranHandler.suggest_library_id_static(
+            config.github_url
+        )
+        branch_name = f"add-fortran-{library_name}-{config.version}".replace(".", "-")
+        infra_branch = f"{branch_name}-infra"
+        main_branch = f"{branch_name}-main"
+        git_mgr.create_branch(infra_repo_path, infra_branch)
+        git_mgr.create_branch(main_repo_path, main_branch)
+
+        click.echo("Running ce_install to add Fortran library...")
+        fortran_handler = FortranHandler(infra_repo_path, main_repo_path, debug=debug)
+
+        try:
+            library_id = fortran_handler.add_library(config)
+            if not library_id:
+                click.echo("❌ Failed to add library to libraries.yaml", err=True)
+                return
+
+            click.echo("Updating fortran.amazon.properties...")
+            config.library_id = library_id
+            if not fortran_handler.update_fortran_properties(library_id, config):
+                click.echo("❌ Failed to update Fortran properties", err=True)
+                return
+
+            click.echo(SUCCESS_MODIFIED_FILES)
+
+            if verify:
+                click.echo("\n" + "=" * 60)
+                click.echo("CHANGES TO BE COMMITTED:")
+                click.echo("=" * 60)
+
+                click.echo(f"\n📁 Repository: {GitManager.CE_INFRA_REPO}")
+                click.echo("-" * 60)
+                infra_diff = git_mgr.get_diff(infra_repo_path)
+                if infra_diff:
+                    click.echo(infra_diff)
+                else:
+                    click.echo("No changes detected")
+
+                click.echo(f"\n📁 Repository: {GitManager.CE_MAIN_REPO}")
+                click.echo("-" * 60)
+                main_diff = git_mgr.get_diff(main_repo_path)
+                if main_diff:
+                    click.echo(main_diff)
+                else:
+                    click.echo("No changes detected")
+
+                click.echo("\n" + "=" * 60)
+
+                if not click.confirm("\nDo you want to proceed with these changes?"):
+                    click.echo("Changes cancelled.")
+                    return
+
+            commit_msg = f"Add Fortran library {library_id} v{config.version}"
+
+            infra_committed = git_mgr.commit_changes(infra_repo_path, commit_msg)
+            main_committed = git_mgr.commit_changes(main_repo_path, commit_msg)
+
+            if not infra_committed and not main_committed:
+                click.echo("⚠️  Library version already exists - no changes to commit.")
+                return
+
+            if github_token:
+                # Only proceed with pushing and PRs if we have commits
+                if infra_committed or main_committed:
+                    # Push branches and create PRs
+                    click.echo("\nPushing branches...")
+                    if infra_committed:
+                        git_mgr.push_branch(infra_repo_path, infra_branch)
+                    if main_committed:
+                        git_mgr.push_branch(main_repo_path, main_branch)
+
+                    click.echo("\nCreating pull requests...")
+                    pr_body = (
+                        f"This PR adds the Fortran library **{library_id}** "
+                        f"version {config.version} to Compiler Explorer.\n\n"
+                    )
+                    pr_body += f"- GitHub URL: {config.github_url}\n"
+                    pr_body += "- Package Manager: FPM (Fortran Package Manager)"
+
+                    if infra_committed:
+                        infra_pr_body = pr_body + PR_FOOTER
+                        infra_pr_url = git_mgr.create_pull_request(
+                            GitManager.CE_INFRA_REPO, infra_branch, commit_msg, infra_pr_body
+                        )
+                        click.echo("\n✓ Created PR:")
+                        click.echo(f"  - Infra: {infra_pr_url}")
+
+                    if main_committed:
+                        main_pr_body = pr_body
+                        if infra_committed:
+                            main_pr_body += f"\n\nRelated PR: {infra_pr_url}"
+                        main_pr_body += PR_FOOTER
+
+                        main_pr_url = git_mgr.create_pull_request(
+                            GitManager.CE_MAIN_REPO,
+                            main_branch,
+                            commit_msg,
+                            main_pr_body,
+                        )
+                        if not infra_committed:
+                            click.echo("\n✓ Created PR:")
+                        click.echo(f"  - Main: {main_pr_url}")
+                else:
+                    click.echo("\n⚠️  No changes to push - skipping PR creation.")
+            else:
+                display_authentication_warning()
+
+        except Exception as e:
+            click.echo(f"\n❌ Error processing Fortran library: {e}", err=True)
             raise
 
 
@@ -354,11 +464,13 @@ def main(
                 # For non-Rust, lib should be a GitHub URL
                 config = LibraryConfig(language=language, github_url=lib, version=ver)
 
-                # For C++, we need to set library_id
+                # For C++ and Fortran, we need to set library_id
                 if language == Language.CPP:
                     from core.cpp_handler import CppHandler
 
                     config.library_id = CppHandler.suggest_library_id_static(lib)
+                elif language == Language.FORTRAN:
+                    config.library_id = FortranHandler.suggest_library_id_static(lib)
         else:
             # Interactive mode
             config = ask_library_questions()
@@ -371,9 +483,11 @@ def main(
             process_rust_library(config, github_token, verify, debug)
         elif config.language == Language.CPP:
             process_cpp_library(config, github_token, verify, debug, install_test)
+        elif config.language == Language.FORTRAN:
+            process_fortran_library(config, github_token, verify, debug)
         else:
             click.echo("\n⚠️  This language is not yet implemented.")
-            click.echo("Currently only Rust and C++ library additions are supported.")
+            click.echo("Currently only Rust, C++, and Fortran library additions are supported.")
 
     except KeyboardInterrupt:
         click.echo("\n\nCancelled by user.")
