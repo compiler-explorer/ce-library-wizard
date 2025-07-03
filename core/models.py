@@ -30,6 +30,7 @@ class LibraryType(str, Enum):
     PACKAGED_HEADERS = "packaged-headers"
     STATIC = "static"
     SHARED = "shared"
+    CSHARED = "cshared"
 
 
 def check_git_tag_exists(repo_url: str, tag: str) -> bool:

@@ -69,6 +69,9 @@ class CHandler:
                 elif existing_config.get("type") == "shared":
                     logger.info(f"Using existing configuration: {library_id} is shared")
                     return True, LibraryType.SHARED
+                elif existing_config.get("type") == "cshared":
+                    logger.info(f"Using existing configuration: {library_id} is cshared")
+                    return True, LibraryType.CSHARED
                 # If existing config doesn't have clear type info, continue with detection
 
         with tempfile.TemporaryDirectory() as tmpdir:
