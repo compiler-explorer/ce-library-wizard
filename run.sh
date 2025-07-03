@@ -29,7 +29,7 @@ print_warning() {
 
 # Check if python3 is available
 if ! command -v python3 &> /dev/null; then
-    print_error "python3 is not installed. Please install Python 3.12 or higher."
+    print_error "python3 is not installed. Please install Python 3.10 or higher."
     exit 1
 fi
 
@@ -37,9 +37,9 @@ fi
 PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
 print_info "Found Python $PYTHON_VERSION"
 
-# Check Python version is 3.12+
-if ! python3 -c 'import sys; exit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
-    print_error "Python 3.12 or higher is required. Found Python $PYTHON_VERSION"
+# Check Python version is 3.10+
+if ! python3 -c 'import sys; exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+    print_error "Python 3.10 or higher is required. Found Python $PYTHON_VERSION"
     exit 1
 fi
 

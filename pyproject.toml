@@ -13,6 +13,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 packages = [
@@ -24,7 +26,7 @@ packages = [
 ce-lib-wizard = "cli.main:main"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.10"
 click = "^8.1.0"
 inquirer = "^3.2.0"
 PyGithub = "^2.0.0"
@@ -44,11 +46,11 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.black]
 line-length = 100
-target-version = ['py312']
+target-version = ['py310']
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py310"
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -60,7 +62,7 @@ select = [
 ]
 
 [tool.pytype]
-python_version = "3.12"
+python_version = "3.10"
 inputs = [
     "cli/",
     "core/"
