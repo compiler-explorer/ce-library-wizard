@@ -781,6 +781,14 @@ def main(
                     config.library_id = CppHandler.suggest_library_id_static(lib)
                 elif language == Language.FORTRAN:
                     config.library_id = FortranHandler.suggest_library_id_static(lib)
+
+                # Normalize versions by checking git tags
+                click.echo("Checking git tags for version format...")
+                config.normalize_versions_with_git_lookup()
+                if config.target_prefix:
+                    click.echo(
+                        f"✓ Detected version format requires target_prefix: {config.target_prefix}"
+                    )
         else:
             # Interactive mode
             config = ask_library_questions()

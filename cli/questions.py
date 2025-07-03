@@ -37,9 +37,11 @@ def ask_library_questions() -> LibraryConfig:
         ]
         rust_version_answer = inquirer.prompt(rust_version_question)
 
-        return LibraryConfig(
+        config = LibraryConfig(
             language=language, name=rust_name_answer["name"], version=rust_version_answer["version"]
         )
+        # Rust versions don't need git tag checking since they use crates.io
+        return config
 
     # For non-Rust languages, ask for GitHub URL
     github_question = [
@@ -97,7 +99,9 @@ def ask_library_questions() -> LibraryConfig:
         from pathlib import Path
 
         cpp_handler = CppHandler(Path.home(), setup_ce_install=False, debug=False)
-        is_valid, detected_type = cpp_handler.detect_library_type(github_answer["github_url"])
+        is_valid, detected_type = cpp_handler.detect_library_type(
+            github_answer["github_url"], library_id_answer["library_id"]
+        )
 
         if not is_valid:
             print("⚠️  Could not automatically detect library type.")
@@ -184,4 +188,14 @@ def ask_library_questions() -> LibraryConfig:
             is_c_library_answer = inquirer.prompt(is_c_library_question)
             config_data["is_c_library"] = is_c_library_answer["is_c_library"]
 
-    return LibraryConfig(**config_data)
+    # Create the config and normalize versions with git lookup
+    config = LibraryConfig(**config_data)
+
+    # Normalize versions by checking git tags (only for non-Rust)
+    if language != Language.RUST:
+        print("\nChecking git tags for version format...")
+        config.normalize_versions_with_git_lookup()
+        if config.target_prefix:
+            print(f"✓ Detected version format requires target_prefix: {config.target_prefix}")
+
+    return config

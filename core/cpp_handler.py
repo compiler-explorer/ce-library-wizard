@@ -12,7 +12,12 @@ from .library_utils import (
 from .library_utils import (
     suggest_library_id_from_github_url,
 )
-from .models import LibraryConfig, LibraryType
+from .models import (
+    LibraryConfig,
+    LibraryType,
+    check_existing_library_config,
+    check_existing_library_config_remote,
+)
 from .subprocess_utils import run_ce_install_command, run_command
 
 logger = logging.getLogger(__name__)
@@ -38,13 +43,72 @@ class CppHandler:
         """Ensure ce_install is available"""
         return setup_ce_install_shared(self.infra_path, self.debug)
 
-    def detect_library_type(self, github_url: str) -> tuple[bool, LibraryType | None]:
+    def detect_library_type(
+        self, github_url: str, library_id: str | None = None
+    ) -> tuple[bool, LibraryType | None]:
         """
         Clone repository and detect if it's header-only by checking for CMakeLists.txt.
+        Also checks existing library configuration if available.
 
         Returns:
             Tuple of (is_valid, library_type)
         """
+        # First check if library already exists and use its configuration
+        existing_config = None
+        if (
+            library_id
+            and hasattr(self, "infra_path")
+            and self.infra_path
+            and self.infra_path.exists()
+            and (self.infra_path / "bin" / "yaml" / "libraries.yaml").exists()
+        ):
+            # We have the infra repo locally with libraries.yaml
+            existing_config = check_existing_library_config(github_url, library_id, self.infra_path)
+        elif library_id:
+            # We don't have the repo yet (interactive mode), check remotely
+            logger.info(f"Checking for existing configuration of {library_id}...")
+            existing_config = check_existing_library_config_remote(github_url, library_id)
+
+        if existing_config:
+            # Library exists, try to determine type from existing config
+
+            # Check if it's explicitly marked as header-only via build_type
+            build_type = existing_config.get("build_type")
+            if build_type == "none":
+                logger.info(
+                    f"Using existing configuration: {library_id} is header-only (build_type: none)"
+                )
+                return True, LibraryType.HEADER_ONLY
+
+            # Check legacy type field
+            lib_type = existing_config.get("type")
+            if lib_type == "header-only":
+                logger.info(f"Using existing configuration: {library_id} is header-only")
+                return True, LibraryType.HEADER_ONLY
+            elif lib_type == "packaged-headers":
+                logger.info(f"Using existing configuration: {library_id} is packaged-headers")
+                return True, LibraryType.PACKAGED_HEADERS
+            elif lib_type == "static":
+                logger.info(f"Using existing configuration: {library_id} is static")
+                return True, LibraryType.STATIC
+            elif lib_type == "shared":
+                logger.info(f"Using existing configuration: {library_id} is shared")
+                return True, LibraryType.SHARED
+
+            # If it's type: github with no explicit build_type, it might be header-only by default
+            if lib_type == "github" and build_type is None:
+                logger.info(
+                    f"Using existing configuration: {library_id} is likely header-only "
+                    f"(type: github, no build_type)"
+                )
+                return True, LibraryType.HEADER_ONLY
+
+            # If existing config doesn't have clear type info, continue with detection
+            logger.warning(
+                f"Could not determine type from existing config for {library_id}, "
+                f"falling back to detection"
+            )
+
         with tempfile.TemporaryDirectory() as tmpdir:
             clone_path = Path(tmpdir) / "repo"
 

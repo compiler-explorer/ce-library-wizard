@@ -11,7 +11,7 @@ from .library_utils import (
 from .library_utils import (
     suggest_library_id_from_github_url,
 )
-from .models import LibraryConfig, LibraryType
+from .models import LibraryConfig, LibraryType, check_existing_library_config
 from .subprocess_utils import run_ce_install_command, run_command
 
 logger = logging.getLogger(__name__)
@@ -37,13 +37,40 @@ class CHandler:
         """Ensure ce_install is available"""
         return setup_ce_install_shared(self.infra_path, self.debug)
 
-    def detect_library_type(self, github_url: str) -> tuple[bool, LibraryType | None]:
+    def detect_library_type(
+        self, github_url: str, library_id: str | None = None
+    ) -> tuple[bool, LibraryType | None]:
         """
         Clone repository and detect if it's header-only by checking for CMakeLists.txt.
+        Also checks existing library configuration if available.
 
         Returns:
             Tuple of (is_valid, library_type)
         """
+        # First check if library already exists and use its configuration
+        if (
+            library_id
+            and hasattr(self, "infra_path")
+            and self.infra_path
+            and self.infra_path.exists()
+        ):
+            existing_config = check_existing_library_config(github_url, library_id, self.infra_path)
+            if existing_config:
+                # Library exists, try to determine type from existing config
+                if existing_config.get("type") == "header-only":
+                    logger.info(f"Using existing configuration: {library_id} is header-only")
+                    return True, LibraryType.HEADER_ONLY
+                elif existing_config.get("type") == "packaged-headers":
+                    logger.info(f"Using existing configuration: {library_id} is packaged-headers")
+                    return True, LibraryType.PACKAGED_HEADERS
+                elif existing_config.get("type") == "static":
+                    logger.info(f"Using existing configuration: {library_id} is static")
+                    return True, LibraryType.STATIC
+                elif existing_config.get("type") == "shared":
+                    logger.info(f"Using existing configuration: {library_id} is shared")
+                    return True, LibraryType.SHARED
+                # If existing config doesn't have clear type info, continue with detection
+
         with tempfile.TemporaryDirectory() as tmpdir:
             clone_path = Path(tmpdir) / "repo"
 
