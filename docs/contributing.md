@@ -126,7 +126,7 @@ To add support for a new language:
 
 1. **Create a handler class** in `core/{language}_handler.py`:
    ```python
-   class JavaHandler:
+   class NewLanguageHandler:
        def __init__(self, infra_path: Path, main_path: Path, debug: bool = False):
            self.infra_path = infra_path
            self.main_path = main_path
@@ -141,7 +141,7 @@ To add support for a new language:
    ```python
    class Language(str, Enum):
        # ... existing languages ...
-       JAVA = "java"
+       NEW_LANGUAGE = "New Language"
    ```
 
 3. **Add CLI support** in `cli/main.py`:

@@ -713,7 +713,7 @@ def process_fortran_library(
 @click.option("--top-rust-crates", is_flag=True, help="Add the top 100 Rust crates")
 @click.option(
     "--lang",
-    type=click.Choice(["c", "c++", "rust", "fortran", "java", "kotlin"], case_sensitive=False),
+    type=click.Choice(["c", "c++", "rust", "fortran"], case_sensitive=False),
     help="Language for the library",
 )
 @click.option("--lib", help="Library name (for Rust) or GitHub URL (for other languages)")
@@ -764,8 +764,6 @@ def main(
                 "c++": Language.CPP,
                 "rust": Language.RUST,
                 "fortran": Language.FORTRAN,
-                "java": Language.JAVA,
-                "kotlin": Language.KOTLIN,
             }
 
             language = lang_map[lang.lower()]

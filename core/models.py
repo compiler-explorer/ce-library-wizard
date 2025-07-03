@@ -10,8 +10,6 @@ class Language(str, Enum):
     CPP = "C++"
     RUST = "Rust"
     FORTRAN = "Fortran"
-    JAVA = "Java"
-    KOTLIN = "Kotlin"
 
 
 class BuildTool(str, Enum):
