@@ -19,6 +19,7 @@ ce-lib-wizard/
 │   ├── constants.py        # Shared strings and messages
 │   ├── ui_utils.py         # Shared UI functions
 │   ├── cpp_handler.py      # C++ library logic
+│   ├── c_handler.py        # C library logic
 │   ├── rust_handler.py     # Rust library logic
 │   ├── fortran_handler.py  # Fortran library logic
 │   └── file_modifications.py # File update logic
@@ -45,6 +46,15 @@ The tool operates in temporary directories and only modifies user-owned forks, p
 
 ## Key Components
 
+### Shared Library Utilities (core/library_utils.py)
+Centralized functions used by both C and C++ handlers:
+- `clone_and_analyze_repository()`: Repository cloning and analysis
+- `detect_library_type_from_analysis()`: Library type detection logic
+- `get_cmake_targets_from_path()`: CMake target discovery
+- `filter_main_cmake_targets()`: Target filtering (excludes test/doc targets)
+- `build_ce_install_command()`: Centralized command building
+- `check_ce_install_link_support()`: Feature detection for infra version
+
 ### GitManager (core/git_operations.py)
 Manages all Git operations using context manager pattern:
 - Clones repositories to temporary directories
@@ -62,10 +72,20 @@ with GitManager(github_token) as git_mgr:
 Each supported language has its own handler class:
 
 #### CppHandler
-- Detects library type (header-only vs packaged)
-- Runs `ce_install cpp-library add`
+- Detects library type (header-only, packaged-headers, static, shared, cshared)
+- Checks existing configuration in libraries.yaml (local and remote)
+- Performs git tag lookup to determine version format and target_prefix
+- Automatically detects CMake targets for static/shared libraries
+- Runs `ce_install cpp-library add` with appropriate flags
+- Supports `--package-install` flag for CMake header configuration
 - Generates Linux and Windows properties
 - Validates library paths
+
+#### CHandler
+- Handles C libraries with similar logic to C++
+- Supports same library types as C++ (static, shared, cshared)
+- Uses shared utilities from library_utils.py
+- Integrates with ce_install for library addition
 
 #### RustHandler
 - Uses `ce_install add-crate`
@@ -116,7 +136,7 @@ Contains language-specific properties files:
 ## Library Addition Flow
 
 ```
-1. User Input (language, library, version)
+1. User Input (language, library, version, optional type/package-install)
     ↓
 2. Fork Creation/Detection
     ↓
@@ -126,20 +146,30 @@ Contains language-specific properties files:
     ├── add-{lang}-{lib}-{version}-infra
     └── add-{lang}-{lib}-{version}-main
     ↓
-5. Language-Specific Processing
+5. Enhanced Library Analysis (C/C++ only)
+    ├── Check existing configuration (local/remote)
+    ├── Clone and analyze target repository
+    ├── Detect library type and CMake targets
+    ├── Perform git tag lookup for version format
+    └── Determine package installation requirements
+    ↓
+6. Language-Specific Processing
+    ├── Build ce_install command with detected parameters
     ├── Run ce_install commands
     ├── Update libraries.yaml
     └── Update properties files
     ↓
-6. Optional Verification (--verify flag)
+7. Optional Verification (--verify flag)
     ├── Show diffs
+    ├── Test installation (--install-test for C++)
+    ├── Check library paths consistency
     └── Confirm with user
     ↓
-7. Commit Changes
+8. Commit Changes
     ↓
-8. Push to Fork
+9. Push to Fork
     ↓
-9. Create Pull Requests
+10. Create Pull Requests
     └── Link related PRs
 ```
 
@@ -157,9 +187,16 @@ This creates a Poetry environment with ce_install commands.
 ### Available Commands
 - `ce_install add-crate` - Add Rust libraries
 - `ce_install generate-rust-props` - Generate Rust properties
-- `ce_install cpp-library add` - Add C++ libraries
+- `ce_install cpp-library add` - Add C++ libraries with various flags:
+  - `--type` - Specify library type
+  - `--static-lib-link` - Static library link targets
+  - `--shared-lib-link` - Shared library link targets
+  - `--package-install` - Enable CMake package installation
 - `ce_install cpp-library generate-linux-props` - Generate Linux properties
+- `ce_install cpp-library generate-windows-props` - Generate Windows properties
 - `ce_install fortran-library add` - Add Fortran libraries
+- `ce_install install` - Test library installation
+- `ce_install list-paths` - Check library installation paths
 
 ## Error Handling Strategy
 
@@ -193,9 +230,40 @@ Converts GitHub URLs to valid identifiers:
 - `https://github.com/fmtlib/fmt` → `fmt`
 - `https://github.com/nlohmann/json` → `nlohmann_json`
 
-### Library Type Detection (C++)
-- Has CMakeLists.txt → `packaged-headers`
-- No CMakeLists.txt → `header-only`
+### Interactive Configuration
+For C/C++ libraries, the tool asks additional questions:
+- Library type (if not auto-detected or overridden)
+- Package installation requirement (for static/shared libraries)
+- Note: packaged-headers automatically enables package installation
+
+### Library Type Detection (C/C++)
+
+#### Automatic Detection Logic
+1. **Existing Configuration Check**: First checks if library already exists in libraries.yaml
+   - Local check: If infra repo is available locally
+   - Remote check: Temporarily clones infra repo to check configuration
+   - Uses existing library type if found
+
+2. **Repository Analysis**: Clones and analyzes the target repository
+   - Has CMakeLists.txt → `packaged-headers` (default)
+   - No CMakeLists.txt → `header-only`
+
+3. **CMake Target Detection**: For static/shared libraries
+   - Runs `cmake --build build --target help` to discover targets
+   - Filters main targets (excludes test/doc/install targets)
+   - Automatically populates staticliblink/sharedliblink fields
+
+#### Supported Library Types
+- `header-only`: Headers only, no compilation
+- `packaged-headers`: Headers + CMake configuration (auto package_install)
+- `static`: Static libraries with optional link targets
+- `shared`: Shared libraries with optional link targets  
+- `cshared`: C shared libraries
+
+#### Version Format Detection
+- Performs git tag lookup on remote repository
+- Determines if library uses version prefix (e.g., 'v' in 'v1.2.3')
+- Preserves original version format in display and properties
 
 ## Performance Considerations
 
@@ -228,6 +296,9 @@ The architecture supports:
 - API/service deployment
 - Batch operations
 - CI/CD integration
+- Enhanced library type detection
+- Automatic build configuration discovery
+- Cross-language shared utilities
 
 ## Debug Mode Features
 

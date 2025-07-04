@@ -215,19 +215,6 @@ gh repo fork compiler-explorer/compiler-explorer --clone=false --fork-name=my-ce
 
 ## Working with Branches
 
-### Reusing Existing Branches
-If a branch already exists:
-1. The tool will detect it
-2. It will reset to the latest upstream state
-3. Your changes will be applied on top
-
-### Manual Branch Management
-```bash
-# Clean up old branches
-cd /tmp/ce-lib-wizard-*/infra
-git branch -D old-branch-name
-git push origin --delete old-branch-name
-```
 
 ## Advanced Library Configuration
 
@@ -275,16 +262,6 @@ git clone --depth 1 --single-branch
 
 ## Troubleshooting Complex Scenarios
 
-### Handling Merge Conflicts
-If upstream changed since you started:
-```bash
-cd /tmp/ce-lib-wizard-*/infra
-git fetch upstream
-git rebase upstream/main
-# Resolve conflicts
-git add .
-git rebase --continue
-```
 
 ### Recovering from Partial Runs
 If the tool fails partway:
@@ -322,7 +299,7 @@ After PRs are merged:
 ### Monitoring Deployment
 Watch the deployment:
 - Check GitHub Actions on the main repo
-- Monitor https://github.com/compiler-explorer/compiler-explorer/deployments
+- Monitor pull request status and CI results
 
 ## Best Practices
 

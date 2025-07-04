@@ -86,6 +86,16 @@ Skip automatic detection and specify the library type directly:
 
 Valid types: `header-only`, `packaged-headers`, `static`, `shared`, `cshared`
 
+### CMake Package Installation (C/C++ only)
+For libraries that require CMake configuration of headers:
+```bash
+# Manual flag for static/shared libraries that need CMake package installation
+./run.sh --lang=cpp --lib=https://github.com/microsoft/vcpkg --ver=2024.01.12 --type=static --package-install
+
+# Note: packaged-headers libraries automatically use package installation
+./run.sh --lang=cpp --lib=https://github.com/eigen/eigen --ver=3.4.0 --type=packaged-headers
+```
+
 ### Test Installation (C++ only)
 Validate that the library installs correctly:
 ```bash
