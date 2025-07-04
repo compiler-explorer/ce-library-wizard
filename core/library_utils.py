@@ -403,6 +403,11 @@ def build_ce_install_command(
     else:
         logger.warning("No library type specified, using default behavior")
 
+    # Add package install flag if specified
+    if hasattr(config, "package_install") and config.package_install:
+        subcommand.append("--package-install")
+        logger.info("Adding --package-install flag for CMake header configuration")
+
     # Add link targets if supported and available
     if link_targets:
         link_targets_str = ",".join(link_targets)

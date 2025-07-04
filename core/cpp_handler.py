@@ -302,7 +302,6 @@ class CppHandler:
         Returns:
             True if installation succeeds, False otherwise
         """
-        import re
 
         try:
             # Check if /opt/compiler-explorer exists
@@ -379,7 +378,6 @@ class CppHandler:
         Returns:
             True if paths are consistent with properties, False otherwise
         """
-        import re
 
         try:
             # Run ce_install list-paths command
