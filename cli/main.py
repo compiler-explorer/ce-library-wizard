@@ -725,6 +725,14 @@ def process_fortran_library(
     ),
     help="Library type (for C/C++ libraries)",
 )
+@click.option(
+    "--package-install",
+    is_flag=True,
+    help=(
+        "Use CMake package installation for headers "
+        "(automatic for packaged-headers, optional for others)"
+    ),
+)
 def main(
     debug: bool,
     github_token: str | None,
@@ -737,6 +745,7 @@ def main(
     lib: str | None,
     ver: str | None,
     type: str | None,
+    package_install: bool,
 ):
     """CLI tool to add libraries to Compiler Explorer"""
     if debug:
@@ -801,6 +810,15 @@ def main(
                     }
                     config.library_type = type_map[type.lower()]
                     click.echo(f"✓ Using specified library type: {config.library_type.value}")
+
+                # Set package install based on type and flag
+                if config.library_type == LibraryType.PACKAGED_HEADERS:
+                    # packaged-headers always uses package installation
+                    config.package_install = True
+                    click.echo("✓ Using CMake package installation (default for packaged-headers)")
+                elif package_install:
+                    config.package_install = True
+                    click.echo("✓ Using CMake package installation for headers")
 
                 # Normalize versions by checking git tags
                 click.echo("Checking git tags for version format...")

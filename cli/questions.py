@@ -139,6 +139,27 @@ def ask_library_questions() -> LibraryConfig:
         library_type_answer = inquirer.prompt(library_type_question)
         config_data["library_type"] = LibraryType(library_type_answer["library_type"])
 
+        # Set package installation based on library type
+        selected_type = LibraryType(library_type_answer["library_type"])
+        if selected_type == LibraryType.PACKAGED_HEADERS:
+            # packaged-headers always uses package installation
+            config_data["package_install"] = True
+            print("✓ Using CMake package installation (default for packaged-headers)")
+        elif cmake_targets:
+            # Ask about package installation for other library types with CMake
+            package_install_question = [
+                inquirer.Confirm(
+                    "package_install",
+                    message=(
+                        "Do the headers need to be configured and installed by CMake? "
+                        "(Choose 'Yes' if headers require CMake processing, 'No' if usable as-is)"
+                    ),
+                    default=False,
+                )
+            ]
+            package_install_answer = inquirer.prompt(package_install_question)
+            config_data["package_install"] = package_install_answer["package_install"]
+
     # C/C++ specific questions
     elif language in [Language.C, Language.CPP]:
         # Question 4: Header-only?

@@ -193,6 +193,7 @@ class LibraryConfig(BaseModel):
     name: str | None = None  # For Rust crates
     library_type: LibraryType | None = None  # For C++ libraries
     library_id: str | None = None  # Library identifier for C++
+    package_install: bool | None = None  # Whether CMake package installation is needed
 
     @field_validator("version")
     @classmethod
