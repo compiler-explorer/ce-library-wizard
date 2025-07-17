@@ -88,8 +88,6 @@ def process_cpp_library(
                     return
                 click.echo("✓ Path check passed")
 
-            # TODO: Update main repo files for C++
-            # This will need implementation once we know the exact file structure
 
             # Show diffs if verify flag is set
             if verify:
@@ -820,23 +818,7 @@ def main(
                     config.package_install = True
                     click.echo("✓ Using CMake package installation for headers")
 
-                # Normalize versions by checking git tags
-                click.echo("Checking git tags for version format...")
-                missing_versions = config.normalize_versions_with_git_lookup()
-
-                if missing_versions:
-                    click.echo("❌ Error: The following versions were not found in the repository:")
-                    for version in missing_versions:
-                        click.echo(f"   - {version}")
-                    click.echo("Please check the version numbers and try again.")
-                    exit(1)
-                else:
-                    click.echo("✓ All versions found in repository")
-
-                if config.target_prefix:
-                    click.echo(
-                        f"✓ Detected version format requires target_prefix: {config.target_prefix}"
-                    )
+                config.validate_versions_and_exit_on_missing()
         else:
             # Interactive mode
             config = ask_library_questions()

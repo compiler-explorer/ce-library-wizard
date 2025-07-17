@@ -221,21 +221,6 @@ def ask_library_questions() -> LibraryConfig:
     # Create the config and normalize versions with git lookup
     config = LibraryConfig(**config_data)
 
-    # Normalize versions by checking git tags (only for non-Rust)
-    if language != Language.RUST:
-        print("\nChecking git tags for version format...")
-        missing_versions = config.normalize_versions_with_git_lookup()
-
-        if missing_versions:
-            print("❌ Error: The following versions were not found in the repository:")
-            for version in missing_versions:
-                print(f"   - {version}")
-            print("Please check the version numbers and try again.")
-            exit(1)
-        else:
-            print("✓ All versions found in repository")
-
-        if config.target_prefix:
-            print(f"✓ Detected version format requires target_prefix: {config.target_prefix}")
+    config.validate_versions_and_exit_on_missing()
 
     return config

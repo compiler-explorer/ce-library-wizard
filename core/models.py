@@ -318,6 +318,29 @@ class LibraryConfig(BaseModel):
 
         return missing_versions
 
+    def validate_versions_and_exit_on_missing(self) -> None:
+        """
+        Validate versions for non-Rust libraries and exit with error if any are missing.
+        This function handles the common pattern of checking versions and failing fast.
+        """
+        if self.language == Language.RUST:
+            return  # Rust versions don't need git tag validation
+
+        print("\nChecking git tags for version format...")
+        missing_versions = self.normalize_versions_with_git_lookup()
+
+        if missing_versions:
+            print("❌ Error: The following versions were not found in the repository:")
+            for version in missing_versions:
+                print(f"   - {version}")
+            print("Please check the version numbers and try again.")
+            exit(1)
+        else:
+            print("✓ All versions found in repository")
+
+        if self.target_prefix:
+            print(f"✓ Detected version format requires target_prefix: {self.target_prefix}")
+
     def get_versions(self) -> list[str]:
         """Get list of versions, handling both single and multiple version cases"""
         if isinstance(self.version, str):
