@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
+import urllib.request
 from enum import Enum
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, HttpUrl, field_validator
+
+from .subprocess_utils import run_command
 
 
 class Language(str, Enum):
@@ -33,8 +37,70 @@ class LibraryType(str, Enum):
     CSHARED = "cshared"
 
 
+def extract_github_repo_info(github_url: str) -> tuple[str, str] | None:
+    """Extract owner and repo name from GitHub URL"""
+    if not github_url:
+        return None
+
+    # Handle various GitHub URL formats
+    url = github_url.rstrip("/")
+    if url.startswith("https://github.com/"):
+        path = url[len("https://github.com/") :]
+    elif url.startswith("http://github.com/"):
+        path = url[len("http://github.com/") :]
+    elif url.startswith("github.com/"):
+        path = url[len("github.com/") :]
+    else:
+        return None
+
+    parts = path.split("/")
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return None
+
+
+def check_github_release_exists(github_url: str, version: str) -> bool:
+    """Check if a GitHub release/tag exists using GitHub API"""
+    repo_info = extract_github_repo_info(github_url)
+    if not repo_info:
+        return False
+
+    owner, repo = repo_info
+
+    # Try both with and without 'v' prefix
+    versions_to_check = [version]
+    if version.startswith("v"):
+        versions_to_check.append(version[1:])
+    else:
+        versions_to_check.append(f"v{version}")
+
+    for test_version in versions_to_check:
+        url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{test_version}"
+        try:
+            with urllib.request.urlopen(url, timeout=10) as response:
+                if response.status == 200:
+                    return True
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+            # Try checking tags endpoint if releases endpoint fails
+            tag_url = f"https://api.github.com/repos/{owner}/{repo}/git/refs/tags/{test_version}"
+            try:
+                with urllib.request.urlopen(tag_url, timeout=10) as tag_response:
+                    if tag_response.status == 200:
+                        return True
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+                continue
+
+    return False
+
+
 def check_git_tag_exists(repo_url: str, tag: str) -> bool:
     """Check if a git tag exists in the remote repository"""
+    # First try GitHub API if it's a GitHub URL
+    if "github.com" in repo_url:
+        if check_github_release_exists(repo_url, tag):
+            return True
+
+    # Fallback to git ls-remote for non-GitHub repos or if API fails
     try:
         # Check if tag exists remotely without cloning
         result = subprocess.run(
@@ -108,10 +174,6 @@ def check_existing_library_config_remote(repo_url: str, library_id: str) -> dict
     Check if a library already exists by temporarily cloning the infra repository.
     This is used during interactive detection when we don't have the repo yet.
     """
-    import tempfile
-
-    from .subprocess_utils import run_command
-
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             infra_path = Path(tmpdir) / "infra"
@@ -138,16 +200,16 @@ def check_existing_library_config_remote(repo_url: str, library_id: str) -> dict
         return None
 
 
-def determine_version_format(repo_url: str, version: str) -> tuple[str, str | None]:
+def determine_version_format(repo_url: str, version: str) -> tuple[str, str | None, bool]:
     """
     Determine the actual version format by checking git tags.
-    Returns (normalized_version, target_prefix)
+    Returns (normalized_version, target_prefix, version_exists)
     """
     if not repo_url:
         # No repo URL, can't check tags - just normalize by removing 'v' prefix
         if version.startswith("v"):
-            return version[1:], "v"
-        return version, None
+            return version[1:], "v", False
+        return version, None, False
 
     # Check if version starts with 'v'
     if version.startswith("v"):
@@ -157,27 +219,27 @@ def determine_version_format(repo_url: str, version: str) -> tuple[str, str | No
 
         if check_git_tag_exists(repo_url, version_with_v):
             # v1.2.3 exists - use it and set target_prefix
-            return version_without_v, "v"
+            return version_without_v, "v", True
         elif check_git_tag_exists(repo_url, version_without_v):
             # Only 1.2.3 exists - user made a mistake, use 1.2.3
-            return version_without_v, None
+            return version_without_v, None, True
         else:
-            # Neither exists - assume user intended v1.2.3 format
-            return version_without_v, "v"
+            # Neither exists - version doesn't exist
+            return version_without_v, "v", False
     else:
         # User entered 1.2.3 - check if both 1.2.3 and v1.2.3 exist
         version_without_v = version
         version_with_v = f"v{version}"
 
-        if check_git_tag_exists(repo_url, version_without_v):
-            # 1.2.3 exists - use it without prefix
-            return version_without_v, None
-        elif check_git_tag_exists(repo_url, version_with_v):
-            # Only v1.2.3 exists - should use target_prefix
-            return version_without_v, "v"
+        if check_git_tag_exists(repo_url, version_with_v):
+            # v1.2.3 exists - should use target_prefix
+            return version_without_v, "v", True
+        elif check_git_tag_exists(repo_url, version_without_v):
+            # Only 1.2.3 exists - use it without prefix
+            return version_without_v, None, True
         else:
-            # Neither exists - assume user intended 1.2.3 format
-            return version_without_v, None
+            # Neither exists - version doesn't exist
+            return version_without_v, None, False
 
 
 class LibraryConfig(BaseModel):
@@ -217,21 +279,29 @@ class LibraryConfig(BaseModel):
         else:
             raise ValueError("Version must be a string or list of strings")
 
-    def normalize_versions_with_git_lookup(self):
+    def normalize_versions_with_git_lookup(self) -> list[str]:
         """
         Normalize versions by checking git tags and set target_prefix if needed.
         This should be called after the model is fully populated with github_url.
+        Returns list of any versions that don't exist in the repository.
         """
         if not self.github_url:
-            return
+            return []
 
         versions = self.get_versions()
         normalized_versions = []
         target_prefix = None
+        missing_versions = []
 
         for version in versions:
-            normalized_version, prefix = determine_version_format(str(self.github_url), version)
+            normalized_version, prefix, exists = determine_version_format(
+                str(self.github_url), version
+            )
             normalized_versions.append(normalized_version)
+
+            # Track missing versions
+            if not exists:
+                missing_versions.append(version)
 
             # Set target_prefix if any version needs it
             if prefix:
@@ -245,6 +315,31 @@ class LibraryConfig(BaseModel):
 
         if target_prefix:
             self.target_prefix = target_prefix
+
+        return missing_versions
+
+    def validate_versions_and_exit_on_missing(self) -> None:
+        """
+        Validate versions for non-Rust libraries and exit with error if any are missing.
+        This function handles the common pattern of checking versions and failing fast.
+        """
+        if self.language == Language.RUST:
+            return  # Rust versions don't need git tag validation
+
+        print("\nChecking git tags for version format...")
+        missing_versions = self.normalize_versions_with_git_lookup()
+
+        if missing_versions:
+            print("❌ Error: The following versions were not found in the repository:")
+            for version in missing_versions:
+                print(f"   - {version}")
+            print("Please check the version numbers and try again.")
+            exit(1)
+        else:
+            print("✓ All versions found in repository")
+
+        if self.target_prefix:
+            print(f"✓ Detected version format requires target_prefix: {self.target_prefix}")
 
     def get_versions(self) -> list[str]:
         """Get list of versions, handling both single and multiple version cases"""
