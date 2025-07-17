@@ -822,7 +822,17 @@ def main(
 
                 # Normalize versions by checking git tags
                 click.echo("Checking git tags for version format...")
-                config.normalize_versions_with_git_lookup()
+                missing_versions = config.normalize_versions_with_git_lookup()
+
+                if missing_versions:
+                    click.echo("❌ Error: The following versions were not found in the repository:")
+                    for version in missing_versions:
+                        click.echo(f"   - {version}")
+                    click.echo("Please check the version numbers and try again.")
+                    exit(1)
+                else:
+                    click.echo("✓ All versions found in repository")
+
                 if config.target_prefix:
                     click.echo(
                         f"✓ Detected version format requires target_prefix: {config.target_prefix}"

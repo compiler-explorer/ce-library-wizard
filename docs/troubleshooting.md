@@ -77,6 +77,24 @@ brew install gh
    - Ensure the library has proper build files (CMakeLists.txt, etc.)
    - Verify the GitHub URL is correct and accessible
 
+### "Error: The following versions were not found in the repository"
+**Problem:** One or more specified versions don't exist in the GitHub repository.
+
+**Solutions:**
+- Check the repository's releases page: `https://github.com/owner/repo/releases`
+- Check the repository's tags page: `https://github.com/owner/repo/tags`
+- Verify the version format (some repos use `v1.2.3`, others use `1.2.3`)
+- Use the exact version string as it appears in the repository
+- For pre-release versions, make sure they're published as releases
+
+**Example:**
+```bash
+# If the repo has v1.2.3 as a tag/release, use:
+./run.sh --lang=cpp --lib=https://github.com/owner/repo --ver=1.2.3
+
+# The tool will automatically detect the 'v' prefix requirement
+```
+
 ### "Failed to add library to libraries.yaml"
 **Problem:** The ce_install command failed to add the library.
 

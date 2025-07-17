@@ -133,28 +133,63 @@ class GitManager:
         return self.main_repo_path, self.infra_repo_path
 
     def create_branch(self, repo_path: Path, branch_name: str):
-        """Create a new branch in the given repository, syncing with upstream first"""
-        # If we have a GitHub token (meaning we're using forks), sync with upstream first
+        """Create a new branch in the given repository, syncing with upstream and origin first"""
+        # If we have a GitHub token (meaning we're using forks), sync everything first
         if self.github_token:
             try:
-                # Fetch from upstream to get latest changes
+                print(f"🔄 Syncing {repo_path.name} with upstream and origin...")
+
+                # Fetch from all remotes to get latest changes
                 self._run_git_command(["git", "fetch", "upstream"], cwd=str(repo_path))
+                self._run_git_command(["git", "fetch", "origin"], cwd=str(repo_path))
 
                 # Make sure we're on main branch
                 self._run_git_command(["git", "checkout", "main"], cwd=str(repo_path))
 
-                # Merge upstream/main into our local main
+                # Merge upstream/main into our local main (get latest from original repo)
                 self._run_git_command(["git", "merge", "upstream/main"], cwd=str(repo_path))
 
-                # Push updated main to our fork
+                # Also merge origin/main in case our fork has changes (this handles the fork sync)
+                try:
+                    self._run_git_command(["git", "merge", "origin/main"], cwd=str(repo_path))
+                except Exception:
+                    # This might fail if origin/main is behind upstream/main, which is fine
+                    logger.info(f"Origin/main merge not needed for {repo_path.name}")
+
+                # Push updated main to our fork to keep it in sync
                 self._run_git_command(["git", "push", "origin", "main"], cwd=str(repo_path))
+
+                print(f"✓ Successfully synced {repo_path.name}")
 
             except Exception as e:
                 # If syncing fails, log warning but continue
                 logger.warning(f"Failed to sync with upstream for {repo_path.name}: {e!s}")
+                print(f"⚠️  Warning: Could not fully sync {repo_path.name}: {e}")
 
-        # Create the new branch from the (hopefully updated) main
-        self._run_git_command(["git", "checkout", "-b", branch_name], cwd=str(repo_path))
+        # Check if the branch already exists locally, delete it if so
+        try:
+            self._run_git_command(["git", "branch", "-D", branch_name], cwd=str(repo_path))
+            print(f"🗑️  Deleted existing local branch: {branch_name}")
+        except Exception:
+            # Branch doesn't exist locally, that's fine
+            pass
+
+        # Check if the branch exists on origin and handle it
+        try:
+            self._run_git_command(
+                ["git", "rev-parse", "--verify", f"origin/{branch_name}"], cwd=str(repo_path)
+            )
+            # Branch exists on origin, check it out and merge latest main
+            print(f"📥 Branch {branch_name} exists on origin, checking out and updating...")
+            self._run_git_command(
+                ["git", "checkout", "-b", branch_name, f"origin/{branch_name}"], cwd=str(repo_path)
+            )
+            # Merge the latest main into this branch to ensure it's up to date
+            self._run_git_command(["git", "merge", "main"], cwd=str(repo_path))
+            print(f"✓ Updated existing branch {branch_name} with latest main")
+        except Exception:
+            # Branch doesn't exist on origin, create it from main
+            self._run_git_command(["git", "checkout", "-b", branch_name], cwd=str(repo_path))
 
     def get_diff(self, repo_path: Path) -> str:
         """Get the git diff for uncommitted changes"""

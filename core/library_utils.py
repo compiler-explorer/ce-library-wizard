@@ -4,7 +4,8 @@ import re
 import tempfile
 from pathlib import Path
 
-from .subprocess_utils import run_command, run_make_command
+from .models import LibraryType
+from .subprocess_utils import run_ce_install_command, run_command, run_make_command
 
 logger = logging.getLogger(__name__)
 
@@ -265,8 +266,6 @@ def detect_library_type_from_analysis(
     Returns:
         Tuple of (is_valid, library_type_value)
     """
-    from .models import LibraryType
-
     # First check existing configuration if available
     if existing_config:
         # Check if it's explicitly marked as header-only via build_type
@@ -339,8 +338,6 @@ def check_ce_install_link_support(infra_path: Path) -> dict[str, bool]:
     Returns:
         Dict with support status for different link parameters
     """
-    from .subprocess_utils import run_ce_install_command
-
     try:
         help_result = run_ce_install_command(
             ["cpp-library", "add", "--help"], cwd=infra_path, debug=False
@@ -402,6 +399,11 @@ def build_ce_install_command(
         logger.info(f"Adding library with type: {library_type_value}")
     else:
         logger.warning("No library type specified, using default behavior")
+
+    # Add target prefix if specified
+    if hasattr(config, "target_prefix") and config.target_prefix:
+        subcommand.extend(["--target-prefix", config.target_prefix])
+        logger.info(f"Adding target prefix: {config.target_prefix}")
 
     # Add package install flag if specified
     if hasattr(config, "package_install") and config.package_install:

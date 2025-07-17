@@ -76,18 +76,42 @@ fi
 # Configure Poetry to create virtual environment in project directory
 poetry config virtualenvs.in-project true --local 2>/dev/null || true
 
+# Check if poetry.lock is out of sync before installing
+if [ -f "poetry.lock" ]; then
+    if ! poetry check --lock 2>/dev/null; then
+        print_error "poetry.lock file is out of sync with pyproject.toml"
+        print_info "Running 'poetry lock' to fix this..."
+        if ! poetry lock; then
+            print_error "Failed to update poetry.lock file"
+            exit 1
+        fi
+        print_info "poetry.lock updated successfully"
+    fi
+fi
+
 # Install dependencies
 print_info "Installing dependencies with Poetry..."
 if [[ "${DEBUG:-}" == "1" || "${CE_DEBUG:-}" == "1" ]]; then
     poetry install --no-interaction --no-ansi
 else
-    poetry install --no-interaction --no-ansi --quiet
+    # Capture output even in quiet mode to detect issues
+    INSTALL_OUTPUT=$(poetry install --no-interaction --no-ansi --quiet 2>&1)
+    INSTALL_EXIT_CODE=$?
 fi
 
-if [ $? -eq 0 ]; then
+if [[ "${DEBUG:-}" == "1" || "${CE_DEBUG:-}" == "1" ]]; then
+    INSTALL_EXIT_CODE=$?
+fi
+
+if [ $INSTALL_EXIT_CODE -eq 0 ]; then
     print_info "Installation complete!"
 else
     print_error "Failed to install dependencies"
+    if [[ "${DEBUG:-}" != "1" && "${CE_DEBUG:-}" != "1" ]]; then
+        print_info "Error output:"
+        echo "$INSTALL_OUTPUT"
+        print_info "Run with DEBUG=1 for more detailed output"
+    fi
     exit 1
 fi
 

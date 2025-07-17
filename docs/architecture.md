@@ -261,9 +261,12 @@ For C/C++ libraries, the tool asks additional questions:
 - `cshared`: C shared libraries
 
 #### Version Format Detection
-- Performs git tag lookup on remote repository
+- Performs git tag lookup on remote repository using GitHub API for enhanced reliability
 - Determines if library uses version prefix (e.g., 'v' in 'v1.2.3')
-- Preserves original version format in display and properties
+- Automatically normalizes user input (removes 'v' prefix) and sets target_prefix appropriately
+- Validates all versions exist in the repository before proceeding
+- Fails fast with clear error messages for non-existent versions
+- Falls back to git ls-remote for non-GitHub repositories
 
 ## Performance Considerations
 
