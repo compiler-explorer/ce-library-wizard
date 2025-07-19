@@ -88,7 +88,6 @@ def process_cpp_library(
                     return
                 click.echo("✓ Path check passed")
 
-
             # Show diffs if verify flag is set
             if verify:
                 click.echo("\n" + "=" * 60)
