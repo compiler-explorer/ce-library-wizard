@@ -67,34 +67,27 @@ def check_github_release_exists(github_url: str, version: str) -> bool:
 
     owner, repo = repo_info
 
-    # Try both with and without 'v' prefix
-    versions_to_check = [version]
-    if version.startswith("v"):
-        versions_to_check.append(version[1:])
-    else:
-        versions_to_check.append(f"v{version}")
-
-    for test_version in versions_to_check:
-        url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{test_version}"
+    # Check the exact version specified
+    url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{version}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            if response.status == 200:
+                return True
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+        # Try checking tags endpoint if releases endpoint fails
+        tag_url = f"https://api.github.com/repos/{owner}/{repo}/git/refs/tags/{version}"
         try:
-            with urllib.request.urlopen(url, timeout=10) as response:
-                if response.status == 200:
+            with urllib.request.urlopen(tag_url, timeout=10) as tag_response:
+                if tag_response.status == 200:
                     return True
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
-            # Try checking tags endpoint if releases endpoint fails
-            tag_url = f"https://api.github.com/repos/{owner}/{repo}/git/refs/tags/{test_version}"
-            try:
-                with urllib.request.urlopen(tag_url, timeout=10) as tag_response:
-                    if tag_response.status == 200:
-                        return True
-            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
-                continue
+            pass
 
     return False
 
 
 def check_git_tag_exists(repo_url: str, tag: str) -> bool:
-    """Check if a git tag exists in the remote repository"""
+    """Check if a git tag exists in the remote repository (exact match only)"""
     # First try GitHub API if it's a GitHub URL
     if "github.com" in repo_url:
         if check_github_release_exists(repo_url, tag):
@@ -112,6 +105,19 @@ def check_git_tag_exists(repo_url: str, tag: str) -> bool:
         return result.returncode == 0 and result.stdout.strip() != ""
     except (subprocess.TimeoutExpired, subprocess.SubprocessError):
         return False
+
+
+def check_git_tag_with_fallback(repo_url: str, tag: str) -> bool:
+    """Check if a git tag exists, trying with 'v' prefix as fallback if not found"""
+    # First check exact tag
+    if check_git_tag_exists(repo_url, tag):
+        return True
+
+    # If not found and doesn't start with 'v', try with 'v' prefix
+    if not tag.startswith("v"):
+        return check_git_tag_exists(repo_url, f"v{tag}")
+
+    return False
 
 
 def check_existing_library_config(
