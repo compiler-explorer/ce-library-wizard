@@ -212,6 +212,7 @@ def process_rust_library(
     github_token: str | None = None,
     verify: bool = False,
     debug: bool = False,
+    build_test: bool = False,
     keep_temp: bool = False,
 ):
     """Process a Rust library addition"""
@@ -235,6 +236,25 @@ def process_rust_library(
         try:
             libraries_yaml_path, new_props_content = rust_handler.process_rust_library(config)
             click.echo(f"✓ Modified {libraries_yaml_path.name}")
+
+            # Run build test if requested
+            if build_test:
+                if platform.system() == "Windows":
+                    click.echo("\n⚠️  Build test is not supported on Windows")
+                else:
+                    available, msg = rust_handler.is_build_test_available()
+                    if not available:
+                        click.echo(f"\n⚠️  {msg}")
+                    else:
+                        click.echo(f"\n🔨 Running Rust build test... ({msg})")
+                        build_result = rust_handler.run_build_test(config.name, config.version)
+                        if not build_result.success:
+                            click.echo("❌ Build test failed. Aborting.", err=True)
+                            return
+                        click.echo("✓ Build test passed")
+                        if build_result.artifacts:
+                            click.echo("  Artifacts produced:")
+                            click.echo(f"  {build_result.get_artifact_summary()}")
 
             # Update main repo with new properties
             click.echo("Updating rust.amazon.properties...")
@@ -899,7 +919,9 @@ def main(
 
                 # Process each version individually
                 if config.is_rust():
-                    process_rust_library(single_config, github_token, verify, debug, keep_temp)
+                    process_rust_library(
+                        single_config, github_token, verify, debug, build_test, keep_temp
+                    )
                 elif config.language == Language.C:
                     process_c_library(
                         single_config,
@@ -928,7 +950,7 @@ def main(
         else:
             # Single version processing (existing logic)
             if config.is_rust():
-                process_rust_library(config, github_token, verify, debug, keep_temp)
+                process_rust_library(config, github_token, verify, debug, build_test, keep_temp)
             elif config.language == Language.C:
                 process_c_library(
                     config, github_token, verify, debug, install_test, build_test, keep_temp

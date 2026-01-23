@@ -45,13 +45,20 @@ class BuildTestResult:
             return "No artifacts found"
 
         # Categorize artifacts
-        libs = [a for a in self.artifacts if a.endswith((".a", ".so", ".so.*")) or ".so." in a]
-        headers = [a for a in self.artifacts if a.endswith(".h")]
-        others = [a for a in self.artifacts if a not in libs and a not in headers]
+        libs = [
+            a for a in self.artifacts if a.endswith((".a", ".so", ".so.*", ".rlib")) or ".so." in a
+        ]
+        rust_meta = [a for a in self.artifacts if a.endswith(".rmeta")]
+        headers = [a for a in self.artifacts if a.endswith((".h", ".hpp", ".hxx", ".hh"))]
+        others = [
+            a for a in self.artifacts if a not in libs and a not in headers and a not in rust_meta
+        ]
 
         parts = []
         if libs:
             parts.append(f"Libraries: {', '.join(Path(lib).name for lib in libs)}")
+        if rust_meta:
+            parts.append(f"Rust metadata: {', '.join(Path(m).name for m in rust_meta)}")
         if headers:
             parts.append(f"Headers: {', '.join(Path(h).name for h in headers)}")
         if others:
@@ -509,4 +516,267 @@ def check_build_test_available(infra_path: Path, debug: bool = False) -> tuple[b
     return (
         False,
         "No compilers installed. Install a compiler using ce_install to enable build testing.",
+    )
+
+
+# Rust-specific build testing functions
+
+
+def detect_installed_rust_compilers(
+    infra_path: Path,
+    debug: bool = False,
+) -> list[InstalledCompiler]:
+    """
+    Detect installed Rust compilers using ce_install.
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        List of installed Rust compilers sorted by version (newest first)
+    """
+    try:
+        # Run ce_install list command to get installed Rust compilers
+        # Filter for "rust" and exclude nightly/beta for stability
+        subcommand = [
+            "--filter-match-all",
+            "list",
+            "--installed-only",
+            "--show-compiler-ids",
+            "--json",
+            "rust",
+            "!nightly",
+            "!beta",
+        ]
+
+        logger.info("Detecting installed Rust compilers...")
+        result = run_ce_install_command(subcommand, cwd=infra_path, debug=debug)
+
+        if result.returncode != 0:
+            logger.error(f"Failed to list installed Rust compilers: {result.stderr}")
+            return []
+
+        output = result.stdout.strip()
+        if not output:
+            logger.warning("No output from ce_install list command")
+            return []
+
+        try:
+            compilers_data = json.loads(output)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse compiler list JSON: {e}")
+            return []
+
+        compilers = []
+        for entry in compilers_data:
+            if isinstance(entry, dict):
+                # Skip libraries, only want compilers
+                if entry.get("is_library", False):
+                    continue
+
+                version = entry.get("target_name", "")
+                compiler_ids = entry.get("compiler_ids", [])
+                name = entry.get("name", "rust")
+
+                if not version or not compiler_ids:
+                    continue
+
+                # Check if version looks like a semver
+                if not version[0].isdigit():
+                    continue
+
+                compiler_id = compiler_ids[0] if compiler_ids else ""
+
+                if version and compiler_id:
+                    compilers.append(
+                        InstalledCompiler(name=name, version=version, compiler_id=compiler_id)
+                    )
+
+        # Sort by version (newest first)
+        compilers.sort(key=lambda c: parse_semver(c.version), reverse=True)
+
+        if compilers:
+            logger.info(f"Found {len(compilers)} installed Rust compiler(s)")
+            if debug:
+                for c in compilers[:5]:
+                    logger.debug(f"  - {c}")
+        else:
+            logger.warning("No installed Rust compilers found")
+
+        return compilers
+
+    except Exception as e:
+        logger.error(f"Error detecting installed Rust compilers: {e}")
+        return []
+
+
+def get_latest_rust_compiler(
+    infra_path: Path,
+    debug: bool = False,
+) -> InstalledCompiler | None:
+    """
+    Get the latest installed Rust compiler.
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        The latest installed Rust compiler, or None if none found
+    """
+    compilers = detect_installed_rust_compilers(infra_path, debug)
+    return compilers[0] if compilers else None
+
+
+def _find_rust_artifacts(staging_dirs: list[str], compiler_id: str) -> tuple[str | None, list[str]]:
+    """
+    Find Rust build artifacts in staging directories.
+
+    Rust builds have a different structure:
+    - staging/<uuid>/<compiler_id>_<hash>/build/debug/lib<crate>.rlib
+    - staging/<uuid>/crate_<name>_<version>/ (source files)
+
+    Args:
+        staging_dirs: List of staging directory paths
+        compiler_id: The Rust compiler ID used for the build
+
+    Returns:
+        Tuple of (build_dir, artifacts) where artifacts are relative paths
+    """
+    for staging_dir in staging_dirs:
+        staging_path = Path(staging_dir)
+        if not staging_path.exists():
+            continue
+
+        # Look for compiler-specific build directory
+        for subdir in staging_path.iterdir():
+            if subdir.is_dir() and subdir.name.startswith(f"{compiler_id}_"):
+                # This is the build directory
+                build_debug = subdir / "build" / "debug"
+                if build_debug.exists():
+                    artifacts = []
+                    for f in build_debug.rglob("*"):
+                        if f.is_file() and (
+                            f.suffix in (".rlib", ".rmeta", ".d") or f.name.endswith(".rlib")
+                        ):
+                            artifacts.append(str(f.relative_to(build_debug)))
+                    return str(build_debug), sorted(artifacts)
+
+    return None, []
+
+
+def run_rust_build_test(
+    infra_path: Path,
+    crate_name: str,
+    version: str,
+    compiler_id: str | None = None,
+    debug: bool = False,
+) -> BuildTestResult:
+    """
+    Test building a Rust crate using ce_install build command.
+
+    Args:
+        infra_path: Path to the infra repository
+        crate_name: The crate name
+        version: The crate version
+        compiler_id: Specific Rust compiler ID to use (auto-detected if None)
+        debug: Enable debug logging
+
+    Returns:
+        BuildTestResult with success status, message, and artifact information
+    """
+    try:
+        # Get compiler ID if not specified
+        if not compiler_id:
+            compiler = get_latest_rust_compiler(infra_path, debug)
+            if not compiler:
+                return BuildTestResult(
+                    success=False,
+                    message=(
+                        "No installed Rust compilers found. "
+                        "Install a Rust compiler using ce_install first."
+                    ),
+                )
+            compiler_id = compiler.compiler_id
+            logger.info(f"Using Rust compiler: {compiler}")
+
+        # Construct the library spec
+        library_spec = f"libraries/rust/{crate_name} {version}"
+
+        # Build the command
+        subcommand = [
+            "--debug",
+            "--dry-run",
+            "--keep-staging",
+            "build",
+            "--temp-install",
+            "--buildfor",
+            compiler_id,
+            library_spec,
+        ]
+
+        logger.info(f"Running Rust build test for {crate_name} {version} with {compiler_id}...")
+        logger.info(f"Command: bin/ce_install {' '.join(subcommand)}")
+
+        result = run_ce_install_command(subcommand, cwd=infra_path, debug=debug)
+
+        output = f"{result.stdout}\n{result.stderr}".strip()
+
+        if result.returncode != 0:
+            logger.error(f"Rust build test failed with exit code {result.returncode}")
+            if debug:
+                logger.debug(f"Output: {output}")
+            return BuildTestResult(
+                success=False,
+                message=f"Rust build test failed: {output}",
+                compiler_id=compiler_id,
+            )
+
+        # Parse staging directories from output
+        staging_dirs = _find_staging_dirs(output)
+        build_dir, artifacts = _find_rust_artifacts(staging_dirs, compiler_id)
+
+        # Check for .rlib files specifically
+        rlib_count = sum(1 for a in artifacts if a.endswith(".rlib"))
+
+        if rlib_count == 0:
+            logger.warning("No .rlib files found in build output")
+
+        logger.info(f"Rust build test completed successfully with {rlib_count} .rlib file(s)")
+        return BuildTestResult(
+            success=True,
+            message=f"Rust build test passed using compiler {compiler_id}",
+            compiler_id=compiler_id,
+            staging_dir=staging_dirs[0] if staging_dirs else None,
+            install_dir=build_dir,
+            artifacts=artifacts,
+        )
+
+    except Exception as e:
+        logger.error(f"Error during Rust build test: {e}")
+        return BuildTestResult(
+            success=False,
+            message=f"Rust build test error: {e}",
+        )
+
+
+def check_rust_build_test_available(infra_path: Path, debug: bool = False) -> tuple[bool, str]:
+    """
+    Check if Rust build testing is available (Rust compiler installed).
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        Tuple of (available, message)
+    """
+    rust_compiler = get_latest_rust_compiler(infra_path, debug)
+    if rust_compiler:
+        return (True, f"Rust build testing available with {rust_compiler}")
+
+    return (
+        False,
+        "No Rust compilers installed. Install a Rust compiler using ce_install first.",
     )

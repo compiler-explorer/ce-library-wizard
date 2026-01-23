@@ -3,6 +3,11 @@ from pathlib import Path
 
 from core.models import LibraryConfig
 
+from .build_tester import (
+    BuildTestResult,
+    check_rust_build_test_available,
+    run_rust_build_test,
+)
 from .subprocess_utils import run_command, run_make_command
 
 
@@ -246,3 +251,39 @@ class RustLibraryHandler:
         new_props_content = self.generate_rust_props()
 
         return libraries_yaml_path, new_props_content
+
+    def is_build_test_available(self) -> tuple[bool, str]:
+        """
+        Check if Rust build testing is available (Rust compiler installed).
+
+        Returns:
+            Tuple of (available, message)
+        """
+        return check_rust_build_test_available(self.infra_repo_path, self.debug)
+
+    def run_build_test(
+        self,
+        crate_name: str,
+        version: str,
+        compiler_id: str | None = None,
+    ) -> BuildTestResult:
+        """
+        Test building the Rust crate using ce_install build command.
+
+        This requires a Rust compiler to be installed via ce_install.
+
+        Args:
+            crate_name: The crate name
+            version: The crate version
+            compiler_id: Specific Rust compiler ID to use (auto-detected if None)
+
+        Returns:
+            BuildTestResult with success status, message, and artifact information
+        """
+        return run_rust_build_test(
+            infra_path=self.infra_repo_path,
+            crate_name=crate_name,
+            version=version,
+            compiler_id=compiler_id,
+            debug=self.debug,
+        )

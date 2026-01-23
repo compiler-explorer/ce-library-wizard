@@ -170,6 +170,49 @@ Link library verification:
 ⚠️  Missing: libfoo.a
 ```
 
+## Rust Build Testing
+
+### Understanding Rust Build Tests
+The `--build-test` flag also works for Rust crates:
+
+1. **What it does:**
+   - Detects installed Rust compilers via `ce_install`
+   - Downloads the crate from crates.io
+   - Builds with `cargo` in a staging directory
+   - Captures `.rlib` and `.rmeta` artifacts
+
+2. **Requirements:**
+   - A Rust compiler must be installed via `ce_install`
+
+3. **What's produced:**
+   - `.rlib` files (Rust library archives)
+   - `.rmeta` files (Rust metadata)
+
+### Example Rust Build Output
+```
+🔨 Running Rust build test... (Rust build testing available with rust 1.91.0 (r1910))
+✓ Build test passed
+  Artifacts produced:
+  Libraries: libserde-e092d98ee6dac194.rlib, libserde.rlib
+  Rust metadata: libserde-e092d98ee6dac194.rmeta, metadata.rmeta
+```
+
+### Manual Rust Build Testing
+Test Rust builds manually:
+
+```bash
+cd /opt/compiler-explorer/infra
+
+# List installed Rust compilers
+bin/ce_install --filter-match-all list --installed-only --show-compiler-ids --json rust '!nightly'
+
+# Run a Rust build test
+bin/ce_install --debug --dry-run --keep-staging build --temp-install --buildfor r1910 'libraries/rust/serde 1.0.219'
+
+# Check the staging directory for artifacts
+find /tmp/ce-cefs-temp/staging/*/r1910_*/build/debug -name "*.rlib"
+```
+
 ## Working with Properties Files
 
 ### Understanding Property File Structure

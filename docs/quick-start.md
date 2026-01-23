@@ -102,17 +102,25 @@ Validate that the library installs correctly:
 ./run.sh --install-test --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
 ```
 
-### Test Build (C/C++ only)
-Test building the library and verify link libraries are produced correctly.
-Requires a compiler installed via `ce_install` (e.g., gcc):
+### Test Build (C/C++/Rust)
+Test building the library and verify artifacts are produced correctly.
+Requires a compiler installed via `ce_install`:
+
+**C/C++ libraries** (requires gcc or clang):
 ```bash
 ./run.sh --build-test --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
 ```
+
+**Rust crates** (requires Rust compiler):
+```bash
+./run.sh --build-test --lang=rust --lib=serde --ver=1.0.219
+```
+
 This will:
 - Auto-detect the latest installed compiler
 - Build the library in a staging directory
-- List all artifacts produced (libraries, headers, etc.)
-- Verify that expected link libraries (from `staticliblink`/`sharedliblink` config) are present
+- List all artifacts produced (libraries, headers, .rlib files, etc.)
+- For C/C++: Verify that expected link libraries (from `staticliblink`/`sharedliblink` config) are present
 
 ### Keep Temporary Files
 For debugging, keep the temporary directories after the tool exits:
