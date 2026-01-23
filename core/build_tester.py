@@ -942,9 +942,10 @@ def run_fortran_build_test(
     """
     Test building a Fortran library using ce_install build command.
 
-    Note: Fortran libraries using fpm (Fortran Package Manager) don't compile
-    during the build step - they package source files. The actual compilation
-    happens at runtime. This test verifies the build process completes successfully.
+    Fortran libraries using FPM (Fortran Package Manager) are compiled during
+    the build step. The build produces:
+    - Static library archives (.a files)
+    - Fortran module files (.mod files)
 
     Args:
         infra_path: Path to the infra repository
@@ -1015,21 +1016,21 @@ def run_fortran_build_test(
         artifacts: list[str] = []
 
         if staging_dir:
-            # For fpm libraries, the artifacts are source files (.f90, .F90, fpm.toml)
+            # FPM libraries produce compiled artifacts: .a (static libs), .mod (module files)
             staging_path = Path(staging_dir)
             if staging_path.exists():
                 for f in staging_path.rglob("*"):
                     if f.is_file():
                         rel_path = str(f.relative_to(staging_path))
-                        # Include relevant Fortran files
+                        # Include compiled artifacts and source files
                         if any(
                             rel_path.endswith(ext)
-                            for ext in (".f90", ".F90", ".f", ".F", ".mod", ".o", ".a", ".toml")
+                            for ext in (".a", ".mod", ".f90", ".F90", ".f", ".F", ".o", ".toml")
                         ):
                             artifacts.append(rel_path)
 
                 artifacts = sorted(artifacts)[:50]  # Limit to 50 artifacts
-                logger.info(f"Found {len(artifacts)} source/build artifacts")
+                logger.info(f"Found {len(artifacts)} build artifacts")
 
         logger.info("Fortran build test completed successfully")
         return BuildTestResult(

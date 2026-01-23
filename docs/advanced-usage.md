@@ -251,17 +251,16 @@ The `--build-test` option also works for Fortran libraries:
 
 1. **What it does:**
    - Detects installed Fortran compilers (prefers gfortran from gcc)
-   - Downloads the FPM package source
-   - Packages source files for deployment
-   - Verifies `.f90`, `.F90`, and `.mod` files
+   - Downloads and builds the FPM package
+   - Compiles source into static libraries and module files
+   - Verifies `.a` and `.mod` files are produced
 
 2. **Requirements:**
    - gfortran (included with gcc) or another Fortran compiler via `ce_install`
 
-3. **How Fortran differs:**
-   - Fortran libraries using FPM (Fortran Package Manager) package source code
-   - Actual compilation happens at runtime when users include them
-   - Build test verifies source can be downloaded and is valid
+3. **What's produced:**
+   - Static library archives (`.a` files, e.g., `libjson-fortran.a`)
+   - Fortran module files (`.mod` files for `use` statements)
 
 4. **Compiler preference:**
    - gfortran (from gcc) - most compatible, preferred
@@ -273,8 +272,8 @@ The `--build-test` option also works for Fortran libraries:
 🔨 Running Fortran build test... (Fortran build testing available with gfortran (gcc 15.2.0) 15.2.0 (g152))
 ✓ Build test passed
   Artifacts produced:
-  Fortran sources: json_file_module.F90, json_kinds.F90, ... and 44 more
-  Other: fpm.toml
+  Libraries: libjson-fortran.a
+  Fortran modules: json_file_module.mod, json_kinds.mod, json_module.mod, ...
 ```
 
 ### Manual Fortran Build Testing

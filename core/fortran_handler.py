@@ -199,8 +199,8 @@ class FortranHandler:
         """
         Test building the Fortran library using ce_install build command.
 
-        Note: Fortran libraries using fpm don't compile during the build step -
-        they package source files. This test verifies the build process completes.
+        Fortran libraries using FPM are compiled during the build step,
+        producing static libraries (.a) and module files (.mod).
 
         Args:
             library_id: The library identifier
