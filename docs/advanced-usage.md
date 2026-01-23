@@ -77,7 +77,7 @@ Minimum required token permissions:
 ## Installation Testing Deep Dive
 
 ### Understanding --install-test
-The `--install-test` flag for C++ libraries:
+The `--install-test` flag for C/C++ libraries:
 
 1. **What it does:**
    - Downloads and installs the library locally
@@ -102,6 +102,72 @@ Test installations manually:
 ```bash
 cd /tmp/ce-lib-wizard-*/infra
 poetry run ce_install install "library_id version"
+```
+
+## Build Testing Deep Dive
+
+### Understanding --build-test
+The `--build-test` flag tests that libraries requiring compilation actually build correctly:
+
+1. **What it does:**
+   - Detects installed compilers (gcc, clang) via `ce_install`
+   - Runs a dry-run build using the latest compiler
+   - Captures all produced artifacts (libraries, headers, pkg-config files)
+   - Verifies that expected link libraries match what was built
+
+2. **Requirements:**
+   - A compiler must be installed via `ce_install` (e.g., gcc 14.2.0)
+   - The infra repository must be cloned
+
+3. **What's checked:**
+   - Build completes successfully
+   - Expected `.a` files exist for `staticliblink` entries
+   - Expected `.so` files exist for `sharedliblink` entries
+
+### Example Output
+```
+🔨 Running build test... (Build testing available with gcc 15.2.0 (g152))
+✓ Build test passed
+  Artifacts produced:
+  Libraries: libz.a, libz.so, libz.so.1, libz.so.1.3.1
+  Headers: zconf.h, zlib.h
+  Other: zlib.pc, zlib.3
+  Link library verification:
+  ✓ -lz (static)
+```
+
+### Manual Build Testing
+Test builds manually using ce_install:
+
+```bash
+cd /opt/compiler-explorer/infra
+
+# List installed compilers
+bin/ce_install --filter-match-all list --installed-only --show-compiler-ids --json gcc '!cross'
+
+# Run a build test (dry-run mode, keeps staging directory)
+bin/ce_install --debug --dry-run --keep-staging build --temp-install --buildfor g152 'libraries/c++/zlib 1.3.1'
+
+# Check the staging directory for artifacts
+ls -la /tmp/ce-cefs-temp/staging/*/install/
+```
+
+### Verifying Link Libraries
+The build test reads `staticliblink` and `sharedliblink` from `libraries.yaml` and verifies the corresponding library files were produced:
+
+```yaml
+# In libraries.yaml
+zlib:
+  lib_type: static
+  staticliblink:
+    - z  # Expects libz.a to be built
+```
+
+If a library is missing, you'll see:
+```
+Link library verification:
+✗ MISSING -lfoo (static)
+⚠️  Missing: libfoo.a
 ```
 
 ## Working with Properties Files

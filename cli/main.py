@@ -34,6 +34,7 @@ def process_cpp_library(
     verify: bool = False,
     debug: bool = False,
     install_test: bool = False,
+    build_test: bool = False,
     keep_temp: bool = False,
 ):
     """Process a C++ library addition"""
@@ -87,6 +88,33 @@ def process_cpp_library(
                     click.echo("❌ Path check failed. Aborting.", err=True)
                     return
                 click.echo("✓ Path check passed")
+
+            # Run build test if requested
+            if build_test:
+                if platform.system() == "Windows":
+                    click.echo("\n⚠️  Build test is not supported on Windows")
+                else:
+                    available, msg = cpp_handler.is_build_test_available()
+                    if not available:
+                        click.echo(f"\n⚠️  {msg}")
+                    else:
+                        click.echo(f"\n🔨 Running build test... ({msg})")
+                        build_result = cpp_handler.run_build_test(library_id, config.version)
+                        if not build_result.success:
+                            click.echo("❌ Build test failed. Aborting.", err=True)
+                            return
+                        click.echo("✓ Build test passed")
+                        if build_result.artifacts:
+                            click.echo("  Artifacts produced:")
+                            click.echo(f"  {build_result.get_artifact_summary()}")
+                        if build_result.link_verification:
+                            click.echo("  Link library verification:")
+                            click.echo(f"  {build_result.get_link_verification_summary()}")
+                            if build_result.missing_links:
+                                click.echo(
+                                    f"  ⚠️  Missing: {', '.join(build_result.missing_links)}",
+                                    err=True,
+                                )
 
             # Show diffs if verify flag is set
             if verify:
@@ -287,6 +315,7 @@ def process_c_library(
     verify: bool = False,
     debug: bool = False,
     install_test: bool = False,
+    build_test: bool = False,
     keep_temp: bool = False,
 ):
     """Process a C library addition"""
@@ -322,12 +351,39 @@ def process_c_library(
 
             click.echo("✓ Modified libraries.yaml and generated properties")
 
-            # Check library paths (no install test for C libraries yet)
+            # Check library paths
             click.echo("\n🔍 Checking library paths...")
             if not c_handler.check_library_paths(library_id, config.version):
                 click.echo("❌ Path check failed. Aborting.", err=True)
                 return
             click.echo("✓ Path check passed")
+
+            # Run build test if requested
+            if build_test:
+                if platform.system() == "Windows":
+                    click.echo("\n⚠️  Build test is not supported on Windows")
+                else:
+                    available, msg = c_handler.is_build_test_available()
+                    if not available:
+                        click.echo(f"\n⚠️  {msg}")
+                    else:
+                        click.echo(f"\n🔨 Running build test... ({msg})")
+                        build_result = c_handler.run_build_test(library_id, config.version)
+                        if not build_result.success:
+                            click.echo("❌ Build test failed. Aborting.", err=True)
+                            return
+                        click.echo("✓ Build test passed")
+                        if build_result.artifacts:
+                            click.echo("  Artifacts produced:")
+                            click.echo(f"  {build_result.get_artifact_summary()}")
+                        if build_result.link_verification:
+                            click.echo("  Link library verification:")
+                            click.echo(f"  {build_result.get_link_verification_summary()}")
+                            if build_result.missing_links:
+                                click.echo(
+                                    f"  ⚠️  Missing: {', '.join(build_result.missing_links)}",
+                                    err=True,
+                                )
 
             # Show diffs if verify flag is set
             if verify:
@@ -706,6 +762,11 @@ def process_fortran_library(
 @click.option("--oauth", is_flag=True, help="Authenticate via browser using GitHub OAuth")
 @click.option("--verify", is_flag=True, help="Show git diff of changes before committing")
 @click.option("--install-test", is_flag=True, help="Test library installation (non-Windows only)")
+@click.option(
+    "--build-test",
+    is_flag=True,
+    help="Test building the library (requires compiler installed via ce_install)",
+)
 @click.option("--keep-temp", is_flag=True, help="Keep temporary directories for debugging")
 @click.option("--top-rust-crates", is_flag=True, help="Add the top 100 Rust crates")
 @click.option(
@@ -736,6 +797,7 @@ def main(
     oauth: bool,
     verify: bool,
     install_test: bool,
+    build_test: bool,
     keep_temp: bool,
     top_rust_crates: bool,
     lang: str | None,
@@ -840,11 +902,23 @@ def main(
                     process_rust_library(single_config, github_token, verify, debug, keep_temp)
                 elif config.language == Language.C:
                     process_c_library(
-                        single_config, github_token, verify, debug, install_test, keep_temp
+                        single_config,
+                        github_token,
+                        verify,
+                        debug,
+                        install_test,
+                        build_test,
+                        keep_temp,
                     )
                 elif config.language == Language.CPP:
                     process_cpp_library(
-                        single_config, github_token, verify, debug, install_test, keep_temp
+                        single_config,
+                        github_token,
+                        verify,
+                        debug,
+                        install_test,
+                        build_test,
+                        keep_temp,
                     )
                 elif config.language == Language.FORTRAN:
                     process_fortran_library(single_config, github_token, verify, debug, keep_temp)
@@ -856,9 +930,13 @@ def main(
             if config.is_rust():
                 process_rust_library(config, github_token, verify, debug, keep_temp)
             elif config.language == Language.C:
-                process_c_library(config, github_token, verify, debug, install_test, keep_temp)
+                process_c_library(
+                    config, github_token, verify, debug, install_test, build_test, keep_temp
+                )
             elif config.language == Language.CPP:
-                process_cpp_library(config, github_token, verify, debug, install_test, keep_temp)
+                process_cpp_library(
+                    config, github_token, verify, debug, install_test, build_test, keep_temp
+                )
             elif config.language == Language.FORTRAN:
                 process_fortran_library(config, github_token, verify, debug, keep_temp)
             else:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from .build_tester import BuildTestResult, check_build_test_available, run_build_test
 from .library_utils import (
     build_ce_install_command,
     check_ce_install_link_support,
@@ -349,3 +350,50 @@ class CHandler:
         except Exception as e:
             logger.error(f"Error during path check: {e}")
             return False
+
+    def is_build_test_available(self) -> tuple[bool, str]:
+        """
+        Check if build testing is available (compiler installed).
+
+        Returns:
+            Tuple of (available, message)
+        """
+        return check_build_test_available(self.infra_path, self.debug)
+
+    def run_build_test(
+        self,
+        library_id: str,
+        version: str,
+        compiler_id: str | None = None,
+        compiler_family: str = "gcc",
+    ) -> BuildTestResult:
+        """
+        Test building the library using ce_install build command.
+
+        This requires a compiler to be installed via ce_install.
+
+        Args:
+            library_id: The library identifier
+            version: The library version
+            compiler_id: Specific compiler ID to use (auto-detected if None)
+            compiler_family: Compiler family to use if auto-detecting
+
+        Returns:
+            BuildTestResult with success status, message, and artifact information
+        """
+        result = run_build_test(
+            infra_path=self.infra_path,
+            library_id=library_id,
+            version=version,
+            language="c",
+            compiler_id=compiler_id,
+            compiler_family=compiler_family,
+            debug=self.debug,
+        )
+
+        if result.success:
+            logger.info(result.message)
+        else:
+            logger.error(result.message)
+
+        return result
