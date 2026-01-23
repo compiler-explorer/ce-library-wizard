@@ -50,9 +50,12 @@ class BuildTestResult:
         ]
         rust_meta = [a for a in self.artifacts if a.endswith(".rmeta")]
         headers = [a for a in self.artifacts if a.endswith((".h", ".hpp", ".hxx", ".hh"))]
-        others = [
-            a for a in self.artifacts if a not in libs and a not in headers and a not in rust_meta
+        fortran_src = [
+            a for a in self.artifacts if a.endswith((".f90", ".F90", ".f", ".F", ".f95", ".F95"))
         ]
+        fortran_mod = [a for a in self.artifacts if a.endswith(".mod")]
+        categorized = set(libs + rust_meta + headers + fortran_src + fortran_mod)
+        others = [a for a in self.artifacts if a not in categorized]
 
         parts = []
         if libs:
@@ -61,6 +64,13 @@ class BuildTestResult:
             parts.append(f"Rust metadata: {', '.join(Path(m).name for m in rust_meta)}")
         if headers:
             parts.append(f"Headers: {', '.join(Path(h).name for h in headers)}")
+        if fortran_mod:
+            parts.append(f"Fortran modules: {', '.join(Path(m).name for m in fortran_mod)}")
+        if fortran_src:
+            src_names = [Path(s).name for s in fortran_src[:5]]
+            if len(fortran_src) > 5:
+                src_names.append(f"... and {len(fortran_src) - 5} more")
+            parts.append(f"Fortran sources: {', '.join(src_names)}")
         if others:
             other_names = [Path(o).name for o in others[:5]]
             if len(others) > 5:
@@ -779,4 +789,281 @@ def check_rust_build_test_available(infra_path: Path, debug: bool = False) -> tu
     return (
         False,
         "No Rust compilers installed. Install a Rust compiler using ce_install first.",
+    )
+
+
+# Fortran-specific build testing functions
+
+
+def detect_installed_fortran_compilers(
+    infra_path: Path,
+    debug: bool = False,
+) -> list[InstalledCompiler]:
+    """
+    Detect installed Fortran compilers using ce_install.
+
+    This function checks both dedicated Fortran compilers (Intel, LFortran) and
+    gcc compilers that include gfortran.
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        List of installed Fortran compilers sorted by version (newest first)
+    """
+    compilers: list[InstalledCompiler] = []
+
+    # First, check for gcc compilers that include gfortran
+    # gfortran comes bundled with gcc and can be used for Fortran library builds
+    try:
+        gcc_compilers = detect_installed_compilers(infra_path, "gcc", debug)
+        for gcc in gcc_compilers:
+            # Check if this gcc installation has gfortran
+            # gcc installations are typically at /opt/compiler-explorer/gcc-<version>
+            gcc_path = Path("/opt/compiler-explorer") / f"gcc-{gcc.version}"
+            gfortran_bin = gcc_path / "bin" / "gfortran"
+
+            if gfortran_bin.exists():
+                compilers.append(
+                    InstalledCompiler(
+                        name=f"gfortran (gcc {gcc.version})",
+                        version=gcc.version,
+                        compiler_id=gcc.compiler_id,
+                    )
+                )
+                if debug:
+                    logger.debug(f"Found gfortran in gcc {gcc.version} at {gfortran_bin}")
+    except Exception as e:
+        logger.warning(f"Error checking for gfortran in gcc: {e}")
+
+    # Also check for dedicated Fortran compilers (Intel, LFortran)
+    try:
+        subcommand = [
+            "--filter-match-all",
+            "list",
+            "--installed-only",
+            "--show-compiler-ids",
+            "--json",
+            "fortran",
+        ]
+
+        logger.info("Detecting installed Fortran compilers...")
+        result = run_ce_install_command(subcommand, cwd=infra_path, debug=debug)
+
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            if output:
+                try:
+                    compilers_data = json.loads(output)
+                    for entry in compilers_data:
+                        if isinstance(entry, dict):
+                            if entry.get("is_library", False):
+                                continue
+
+                            version = entry.get("target_name", "")
+                            compiler_ids = entry.get("compiler_ids", [])
+                            name = entry.get("name", "fortran")
+
+                            if not version or not compiler_ids:
+                                continue
+
+                            compiler_id = compiler_ids[0] if compiler_ids else ""
+
+                            if version and compiler_id:
+                                compilers.append(
+                                    InstalledCompiler(
+                                        name=name, version=version, compiler_id=compiler_id
+                                    )
+                                )
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse compiler list JSON: {e}")
+    except Exception as e:
+        logger.error(f"Error detecting dedicated Fortran compilers: {e}")
+
+    if compilers:
+        logger.info(f"Found {len(compilers)} installed Fortran compiler(s)")
+        if debug:
+            for c in compilers[:5]:
+                logger.debug(f"  - {c}")
+    else:
+        logger.warning("No installed Fortran compilers found")
+
+    return compilers
+
+
+def get_latest_fortran_compiler(
+    infra_path: Path,
+    debug: bool = False,
+) -> InstalledCompiler | None:
+    """
+    Get the latest installed Fortran compiler, preferring gfortran over Intel Fortran.
+
+    Priority order:
+    1. gfortran (from gcc) - most compatible and widely used
+    2. LFortran - modern Fortran compiler
+    3. Intel Fortran - proprietary, may have compatibility issues
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        The latest installed Fortran compiler, or None if none found
+    """
+    compilers = detect_installed_fortran_compilers(infra_path, debug)
+    if not compilers:
+        return None
+
+    # Prefer gfortran (usually from gcc installations)
+    gfortran_compilers = [c for c in compilers if "gfortran" in c.name.lower()]
+    if gfortran_compilers:
+        # Sort by version and return the latest
+        gfortran_compilers.sort(key=lambda c: parse_semver(c.version), reverse=True)
+        return gfortran_compilers[0]
+
+    # Next, prefer LFortran
+    lfortran_compilers = [c for c in compilers if "lfortran" in c.name.lower()]
+    if lfortran_compilers:
+        lfortran_compilers.sort(key=lambda c: parse_semver(c.version), reverse=True)
+        return lfortran_compilers[0]
+
+    # Fall back to any available Fortran compiler (e.g., Intel)
+    return compilers[0]
+
+
+def run_fortran_build_test(
+    infra_path: Path,
+    library_id: str,
+    version: str,
+    compiler_id: str | None = None,
+    debug: bool = False,
+) -> BuildTestResult:
+    """
+    Test building a Fortran library using ce_install build command.
+
+    Note: Fortran libraries using fpm (Fortran Package Manager) don't compile
+    during the build step - they package source files. The actual compilation
+    happens at runtime. This test verifies the build process completes successfully.
+
+    Args:
+        infra_path: Path to the infra repository
+        library_id: The library identifier
+        version: The library version
+        compiler_id: Specific Fortran compiler ID to use (auto-detected if None)
+        debug: Enable debug logging
+
+    Returns:
+        BuildTestResult with success status, message, and artifact information
+    """
+    try:
+        # Get compiler ID if not specified
+        if not compiler_id:
+            compiler = get_latest_fortran_compiler(infra_path, debug)
+            if not compiler:
+                return BuildTestResult(
+                    success=False,
+                    message=(
+                        "No installed Fortran compilers found. "
+                        "Install a Fortran compiler using ce_install first."
+                    ),
+                )
+            compiler_id = compiler.compiler_id
+            logger.info(f"Using Fortran compiler: {compiler}")
+
+        # Construct the library spec
+        library_spec = f"libraries/fortran/{library_id} {version}"
+
+        # Build the command - note: we can't use --dry-run for fpm libraries
+        # as they need to be "installed" (source extracted) to verify
+        subcommand = [
+            "--debug",
+            "--keep-staging",
+            "build",
+            "--temp-install",
+            "--buildfor",
+            compiler_id,
+            library_spec,
+        ]
+
+        logger.info(f"Running Fortran build test for {library_id} {version}...")
+        logger.info(f"Command: bin/ce_install {' '.join(subcommand)}")
+
+        result = run_ce_install_command(subcommand, cwd=infra_path, debug=debug)
+
+        output = f"{result.stdout}\n{result.stderr}".strip()
+
+        # Check for success - fpm libraries may fail at deployment stage (permission error)
+        # but that's OK for testing purposes - we just want to verify the source is valid
+        if result.returncode != 0:
+            # Check if it failed at deployment stage (permission error is expected)
+            if "PermissionError" in output and "cefs-images" in output:
+                logger.info("Build completed but deployment failed (expected in test mode)")
+            else:
+                logger.error(f"Fortran build test failed with exit code {result.returncode}")
+                if debug:
+                    logger.debug(f"Output: {output}")
+                return BuildTestResult(
+                    success=False,
+                    message=f"Fortran build test failed: {output}",
+                    compiler_id=compiler_id,
+                )
+
+        # Parse staging directories from output
+        staging_dirs = _find_staging_dirs(output)
+        staging_dir = staging_dirs[0] if staging_dirs else None
+        artifacts: list[str] = []
+
+        if staging_dir:
+            # For fpm libraries, the artifacts are source files (.f90, .F90, fpm.toml)
+            staging_path = Path(staging_dir)
+            if staging_path.exists():
+                for f in staging_path.rglob("*"):
+                    if f.is_file():
+                        rel_path = str(f.relative_to(staging_path))
+                        # Include relevant Fortran files
+                        if any(
+                            rel_path.endswith(ext)
+                            for ext in (".f90", ".F90", ".f", ".F", ".mod", ".o", ".a", ".toml")
+                        ):
+                            artifacts.append(rel_path)
+
+                artifacts = sorted(artifacts)[:50]  # Limit to 50 artifacts
+                logger.info(f"Found {len(artifacts)} source/build artifacts")
+
+        logger.info("Fortran build test completed successfully")
+        return BuildTestResult(
+            success=True,
+            message=f"Fortran build test passed using compiler {compiler_id}",
+            compiler_id=compiler_id,
+            staging_dir=staging_dir,
+            artifacts=artifacts,
+        )
+
+    except Exception as e:
+        logger.error(f"Error during Fortran build test: {e}")
+        return BuildTestResult(
+            success=False,
+            message=f"Fortran build test error: {e}",
+        )
+
+
+def check_fortran_build_test_available(infra_path: Path, debug: bool = False) -> tuple[bool, str]:
+    """
+    Check if Fortran build testing is available (Fortran compiler installed).
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        Tuple of (available, message)
+    """
+    fortran_compiler = get_latest_fortran_compiler(infra_path, debug)
+    if fortran_compiler:
+        return (True, f"Fortran build testing available with {fortran_compiler}")
+
+    return (
+        False,
+        "No Fortran compilers installed. Install a Fortran compiler using ce_install first.",
     )

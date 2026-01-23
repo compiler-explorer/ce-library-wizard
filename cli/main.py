@@ -733,6 +733,7 @@ def process_fortran_library(
     verify: bool = False,
     dry_run: bool = False,
     debug: bool = False,
+    build_test: str = "auto",
     keep_temp: bool = False,
     yes: bool = False,
 ):
@@ -768,6 +769,39 @@ def process_fortran_library(
                 return
 
             click.echo(SUCCESS_MODIFIED_FILES)
+
+            # Run build test based on mode
+            should_build_test = build_test.lower()
+            is_auto_mode = should_build_test == "auto"
+
+            if should_build_test != "no":
+                if platform.system() == "Windows":
+                    if should_build_test == "yes":
+                        click.echo("\n⚠️  Build test is not supported on Windows")
+                else:
+                    available, msg = fortran_handler.is_build_test_available()
+                    if not available:
+                        if should_build_test == "yes":
+                            click.echo(f"\n❌ {msg}", err=True)
+                            return
+                        # Auto mode: silently skip if no compiler
+                    else:
+                        click.echo(f"\n🔨 Running Fortran build test... ({msg})")
+                        build_result = fortran_handler.run_build_test(library_id, config.version)
+                        if not build_result.success:
+                            click.echo("❌ Build test failed.", err=True)
+                            if is_auto_mode:
+                                click.echo(
+                                    "   💡 Hint: Use --build-test=no to skip build testing "
+                                    "if this failure is expected.",
+                                    err=True,
+                                )
+                            click.echo("Aborting.", err=True)
+                            return
+                        click.echo("✓ Build test passed")
+                        if build_result.artifacts:
+                            click.echo("  Artifacts produced:")
+                            click.echo(f"  {build_result.get_artifact_summary()}")
 
             # Show diffs if verify or dry_run flag is set
             if verify or dry_run:
@@ -1046,7 +1080,14 @@ def main(
                     )
                 elif config.language == Language.FORTRAN:
                     process_fortran_library(
-                        single_config, github_token, verify, dry_run, debug, keep_temp, yes
+                        single_config,
+                        github_token,
+                        verify,
+                        dry_run,
+                        debug,
+                        build_test,
+                        keep_temp,
+                        yes,
                     )
                 else:
                     click.echo(f"\n⚠️  Language {config.language} is not yet implemented.")
@@ -1083,7 +1124,7 @@ def main(
                 )
             elif config.language == Language.FORTRAN:
                 process_fortran_library(
-                    config, github_token, verify, dry_run, debug, keep_temp, yes
+                    config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
                 )
             else:
                 click.echo("\n⚠️  This language is not yet implemented.")
