@@ -1068,3 +1068,239 @@ def check_fortran_build_test_available(infra_path: Path, debug: bool = False) ->
         False,
         "No Fortran compilers installed. Install a Fortran compiler using ce_install first.",
     )
+
+
+# Go-specific build testing functions
+
+
+def detect_installed_go_compilers(
+    infra_path: Path,
+    debug: bool = False,
+) -> list[InstalledCompiler]:
+    """
+    Detect installed Go compilers using ce_install.
+
+    Filters out gccgo and nightly/tip builds for stability.
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        List of installed Go compilers sorted by version (newest first)
+    """
+    try:
+        subcommand = [
+            "--filter-match-all",
+            "list",
+            "--installed-only",
+            "--show-compiler-ids",
+            "--json",
+            "go",
+            "!gccgo",
+            "!tip",
+        ]
+
+        logger.info("Detecting installed Go compilers...")
+        result = run_ce_install_command(subcommand, cwd=infra_path, debug=debug)
+
+        if result.returncode != 0:
+            logger.error(f"Failed to list installed Go compilers: {result.stderr}")
+            return []
+
+        output = result.stdout.strip()
+        if not output:
+            logger.warning("No output from ce_install list command")
+            return []
+
+        try:
+            compilers_data = json.loads(output)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse compiler list JSON: {e}")
+            return []
+
+        compilers = []
+        for entry in compilers_data:
+            if isinstance(entry, dict):
+                if entry.get("is_library", False):
+                    continue
+
+                version = entry.get("target_name", "")
+                compiler_ids = entry.get("compiler_ids", [])
+                name = entry.get("name", "go")
+
+                if not version or not compiler_ids:
+                    continue
+
+                # Check if version looks like a semver
+                if not version[0].isdigit():
+                    continue
+
+                compiler_id = compiler_ids[0] if compiler_ids else ""
+
+                if version and compiler_id:
+                    compilers.append(
+                        InstalledCompiler(name=name, version=version, compiler_id=compiler_id)
+                    )
+
+        # Sort by version (newest first)
+        compilers.sort(key=lambda c: parse_semver(c.version), reverse=True)
+
+        if compilers:
+            logger.info(f"Found {len(compilers)} installed Go compiler(s)")
+            if debug:
+                for c in compilers[:5]:
+                    logger.debug(f"  - {c}")
+        else:
+            logger.warning("No installed Go compilers found")
+
+        return compilers
+
+    except Exception as e:
+        logger.error(f"Error detecting installed Go compilers: {e}")
+        return []
+
+
+def get_latest_go_compiler(
+    infra_path: Path,
+    debug: bool = False,
+) -> InstalledCompiler | None:
+    """
+    Get the latest installed Go compiler.
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        The latest installed Go compiler, or None if none found
+    """
+    compilers = detect_installed_go_compilers(infra_path, debug)
+    return compilers[0] if compilers else None
+
+
+def run_go_build_test(
+    infra_path: Path,
+    library_id: str,
+    version: str,
+    compiler_id: str | None = None,
+    debug: bool = False,
+) -> BuildTestResult:
+    """
+    Test building a Go library using ce_install build command.
+
+    Go libraries use the gomod build type. The build produces cache_delta
+    files (compiled Go packages) and module_sources.
+
+    Args:
+        infra_path: Path to the infra repository
+        library_id: The library identifier
+        version: The library version
+        compiler_id: Specific Go compiler ID to use (auto-detected if None)
+        debug: Enable debug logging
+
+    Returns:
+        BuildTestResult with success status, message, and artifact information
+    """
+    try:
+        # Get compiler ID if not specified
+        if not compiler_id:
+            compiler = get_latest_go_compiler(infra_path, debug)
+            if not compiler:
+                return BuildTestResult(
+                    success=False,
+                    message=(
+                        "No installed Go compilers found. "
+                        "Install a Go compiler using ce_install first."
+                    ),
+                )
+            compiler_id = compiler.compiler_id
+            logger.info(f"Using Go compiler: {compiler}")
+
+        # Construct the library spec
+        library_spec = f"libraries/go/{library_id} {version}"
+
+        # Build the command
+        subcommand = [
+            "--debug",
+            "--keep-staging",
+            "build",
+            "--temp-install",
+            "--buildfor",
+            compiler_id,
+            library_spec,
+        ]
+
+        logger.info(f"Running Go build test for {library_id} {version} with {compiler_id}...")
+        logger.info(f"Command: bin/ce_install {' '.join(subcommand)}")
+
+        result = run_ce_install_command(subcommand, cwd=infra_path, debug=debug)
+
+        output = f"{result.stdout}\n{result.stderr}".strip()
+
+        if result.returncode != 0:
+            # Check if it failed at deployment stage (permission error is expected)
+            if "PermissionError" in output and "cefs-images" in output:
+                logger.info("Build completed but deployment failed (expected in test mode)")
+            else:
+                logger.error(f"Go build test failed with exit code {result.returncode}")
+                if debug:
+                    logger.debug(f"Output: {output}")
+                return BuildTestResult(
+                    success=False,
+                    message=f"Go build test failed: {output}",
+                    compiler_id=compiler_id,
+                )
+
+        # Parse staging directories from output
+        staging_dirs = _find_staging_dirs(output)
+        staging_dir = staging_dirs[0] if staging_dirs else None
+        artifacts: list[str] = []
+
+        if staging_dir:
+            staging_path = Path(staging_dir)
+            if staging_path.exists():
+                for f in staging_path.rglob("*"):
+                    if f.is_file():
+                        rel_path = str(f.relative_to(staging_path))
+                        artifacts.append(rel_path)
+
+                artifacts = sorted(artifacts)[:50]
+                logger.info(f"Found {len(artifacts)} build artifacts")
+
+        logger.info("Go build test completed successfully")
+        return BuildTestResult(
+            success=True,
+            message=f"Go build test passed using compiler {compiler_id}",
+            compiler_id=compiler_id,
+            staging_dir=staging_dir,
+            artifacts=artifacts,
+        )
+
+    except Exception as e:
+        logger.error(f"Error during Go build test: {e}")
+        return BuildTestResult(
+            success=False,
+            message=f"Go build test error: {e}",
+        )
+
+
+def check_go_build_test_available(infra_path: Path, debug: bool = False) -> tuple[bool, str]:
+    """
+    Check if Go build testing is available (Go compiler installed).
+
+    Args:
+        infra_path: Path to the infra repository
+        debug: Enable debug logging
+
+    Returns:
+        Tuple of (available, message)
+    """
+    go_compiler = get_latest_go_compiler(infra_path, debug)
+    if go_compiler:
+        return (True, f"Go build testing available with {go_compiler}")
+
+    return (
+        False,
+        "No Go compilers installed. Install a Go compiler using ce_install first.",
+    )

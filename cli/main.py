@@ -13,6 +13,7 @@ from core.file_modifications import update_rust_properties
 from core.fortran_handler import FortranHandler
 from core.git_operations import GitManager
 from core.github_auth import get_github_token_via_gh_cli, get_github_token_via_oauth
+from core.go_handler import GoHandler, detect_import_path, resolve_go_module
 from core.models import Language, LibraryConfig, LibraryType
 from core.rust_handler import RustLibraryHandler
 from core.subprocess_utils import run_ce_install_command
@@ -896,6 +897,196 @@ def process_fortran_library(
             raise
 
 
+def process_go_library(
+    config: LibraryConfig,
+    github_token: str | None = None,
+    verify: bool = False,
+    dry_run: bool = False,
+    debug: bool = False,
+    build_test: str = "auto",
+    keep_temp: bool = False,
+    yes: bool = False,
+):
+    """Process a Go library addition"""
+    click.echo(
+        f"\nProcessing Go module: {config.module} ({config.library_id or 'auto'}) {config.version}"
+    )
+
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
+        click.echo("Cloning repositories...")
+        main_repo_path, infra_repo_path = git_mgr.clone_repositories()
+
+        library_name = config.library_id or GoHandler.suggest_library_id_static(config.module)
+        branch_name = f"add-go-{library_name}-{config.version}".replace(".", "-")
+        infra_branch = f"{branch_name}-infra"
+        main_branch = f"{branch_name}-main"
+        git_mgr.create_branch(infra_repo_path, infra_branch)
+        git_mgr.create_branch(main_repo_path, main_branch)
+
+        click.echo("Adding Go library...")
+        go_handler = GoHandler(infra_repo_path, main_repo_path, debug=debug)
+
+        try:
+            if config.module:
+                click.echo("Resolving module path...")
+                resolved_module, resolved_import = resolve_go_module(
+                    config.module, config.get_primary_version()
+                )
+                if resolved_module != config.module:
+                    click.echo(f"Resolved subpackage path to module: {resolved_module}")
+                    config.import_path = config.import_path or resolved_import
+                    config.module = resolved_module
+                    config.library_id = GoHandler.suggest_library_id_static(resolved_module)
+
+                if not config.import_path:
+                    click.echo("Checking module structure...")
+                    detected = detect_import_path(config.module, config.get_primary_version())
+                    if detected:
+                        click.echo(f"Root package not importable, using: {detected}")
+                        config.import_path = detected
+                    else:
+                        click.echo("Root package is importable")
+
+            library_id = go_handler.add_library(config)
+            if not library_id:
+                click.echo("Failed to add library to libraries.yaml", err=True)
+                return
+
+            click.echo("Updating go.amazon.properties...")
+            config.library_id = library_id
+            if not go_handler.update_go_properties(library_id, config):
+                click.echo("Failed to update Go properties", err=True)
+                return
+
+            click.echo(SUCCESS_MODIFIED_FILES)
+
+            # Run build test based on mode
+            should_build_test = build_test.lower()
+            is_auto_mode = should_build_test == "auto"
+
+            if should_build_test != "no":
+                if platform.system() == "Windows":
+                    if should_build_test == "yes":
+                        click.echo("\nBuild test is not supported on Windows")
+                else:
+                    available, msg = go_handler.is_build_test_available()
+                    if not available:
+                        if should_build_test == "yes":
+                            click.echo(f"\n{msg}", err=True)
+                            return
+                        # Auto mode: silently skip if no compiler
+                    else:
+                        click.echo(f"\nRunning Go build test... ({msg})")
+                        build_result = go_handler.run_build_test(library_id, config.version)
+                        if not build_result.success:
+                            click.echo("Build test failed.", err=True)
+                            if is_auto_mode:
+                                click.echo(
+                                    "   Hint: Use --build-test=no to skip build testing "
+                                    "if this failure is expected.",
+                                    err=True,
+                                )
+                            click.echo("Aborting.", err=True)
+                            return
+                        click.echo("Build test passed")
+                        if build_result.artifacts:
+                            click.echo("  Artifacts produced:")
+                            click.echo(f"  {build_result.get_artifact_summary()}")
+
+            # Show diffs if verify or dry_run flag is set
+            if verify or dry_run:
+                click.echo("\n" + "=" * 60)
+                click.echo("CHANGES TO BE COMMITTED:")
+                click.echo("=" * 60)
+
+                click.echo(f"\nRepository: {GitManager.CE_INFRA_REPO}")
+                click.echo("-" * 60)
+                infra_diff = git_mgr.get_diff(infra_repo_path)
+                if infra_diff:
+                    click.echo(infra_diff)
+                else:
+                    click.echo("No changes detected")
+
+                click.echo(f"\nRepository: {GitManager.CE_MAIN_REPO}")
+                click.echo("-" * 60)
+                main_diff = git_mgr.get_diff(main_repo_path)
+                if main_diff:
+                    click.echo(main_diff)
+                else:
+                    click.echo("No changes detected")
+
+                click.echo("\n" + "=" * 60)
+
+                # Exit early if dry-run mode
+                if dry_run:
+                    click.echo("\nDry run complete - no changes committed.")
+                    return
+
+                if not yes and not click.confirm("\nDo you want to proceed with these changes?"):
+                    click.echo("Changes cancelled.")
+                    return
+
+            commit_msg = f"Add Go library {library_id} {config.version}"
+
+            infra_committed = git_mgr.commit_changes(infra_repo_path, commit_msg)
+            main_committed = git_mgr.commit_changes(main_repo_path, commit_msg)
+
+            if not infra_committed and not main_committed:
+                click.echo("Library version already exists - no changes to commit.")
+                return
+
+            if github_token:
+                # Only proceed with pushing and PRs if we have commits
+                if infra_committed or main_committed:
+                    # Push branches and create PRs
+                    click.echo("\nPushing branches...")
+                    if infra_committed:
+                        git_mgr.push_branch(infra_repo_path, infra_branch)
+                    if main_committed:
+                        git_mgr.push_branch(main_repo_path, main_branch)
+
+                    click.echo("\nCreating pull requests...")
+                    pr_body = (
+                        f"This PR adds the Go library **{library_id}** "
+                        f"(module: `{config.module}`) "
+                        f"version {config.version} to Compiler Explorer.\n\n"
+                    )
+                    pr_body += f"- Go module: {config.module}\n"
+                    pr_body += "- Build type: gomod"
+
+                    if infra_committed:
+                        infra_pr_body = pr_body + PR_FOOTER
+                        infra_pr_url = git_mgr.create_pull_request(
+                            GitManager.CE_INFRA_REPO, infra_branch, commit_msg, infra_pr_body
+                        )
+                        click.echo("\nCreated PR:")
+                        click.echo(f"  - Infra: {infra_pr_url}")
+
+                    if main_committed:
+                        main_pr_body = pr_body
+                        if infra_committed:
+                            main_pr_body += f"\n\nRelated PR: {infra_pr_url}"
+                        main_pr_body += PR_FOOTER
+
+                        main_pr_url = git_mgr.create_pull_request(
+                            GitManager.CE_MAIN_REPO,
+                            main_branch,
+                            commit_msg,
+                            main_pr_body,
+                        )
+                        if not infra_committed:
+                            click.echo("\nCreated PR:")
+                        click.echo(f"  - Main: {main_pr_url}")
+                else:
+                    click.echo("\nNo changes to push - skipping PR creation.")
+            else:
+                display_authentication_warning()
+
+        except Exception as e:
+            click.echo(f"\nError processing Go library: {e}", err=True)
+            raise
+
+
 @click.command()
 @click.option("--debug", is_flag=True, help="Enable debug mode")
 @click.option("--github-token", envvar="GITHUB_TOKEN", help="GitHub token for creating PRs")
@@ -914,7 +1105,7 @@ def process_fortran_library(
 @click.option("--top-rust-crates", is_flag=True, help="Add the top 100 Rust crates")
 @click.option(
     "--lang",
-    type=click.Choice(["c", "c++", "rust", "fortran"], case_sensitive=False),
+    type=click.Choice(["c", "c++", "rust", "fortran", "go"], case_sensitive=False),
     help="Language for the library",
 )
 @click.option("--lib", help="Library name (for Rust) or GitHub URL (for other languages)")
@@ -934,6 +1125,10 @@ def process_fortran_library(
         "(automatic for packaged-headers, optional for others)"
     ),
 )
+@click.option(
+    "--import-path",
+    help="Go import path override (for modules where root package isn't importable)",
+)
 def main(
     debug: bool,
     github_token: str | None,
@@ -950,6 +1145,7 @@ def main(
     ver: str | None,
     type: str | None,
     package_install: bool,
+    import_path: str | None,
 ):
     """CLI tool to add libraries to Compiler Explorer"""
     if debug:
@@ -985,14 +1181,23 @@ def main(
                 "c++": Language.CPP,
                 "rust": Language.RUST,
                 "fortran": Language.FORTRAN,
+                "go": Language.GO,
             }
 
             language = lang_map[lang.lower()]
 
             if language == Language.RUST:
                 config = LibraryConfig(language=language, name=lib, version=ver)
+            elif language == Language.GO:
+                config = LibraryConfig(
+                    language=language,
+                    module=lib,
+                    version=ver,
+                    import_path=import_path,
+                )
+                config.library_id = GoHandler.suggest_library_id_static(lib)
             else:
-                # For non-Rust, lib should be a GitHub URL
+                # For non-Rust/Go, lib should be a GitHub URL
                 config = LibraryConfig(language=language, github_url=lib, version=ver)
 
                 # For C, C++, and Fortran, we need to set library_id
@@ -1089,6 +1294,17 @@ def main(
                         keep_temp,
                         yes,
                     )
+                elif config.is_go():
+                    process_go_library(
+                        single_config,
+                        github_token,
+                        verify,
+                        dry_run,
+                        debug,
+                        build_test,
+                        keep_temp,
+                        yes,
+                    )
                 else:
                     click.echo(f"\n⚠️  Language {config.language} is not yet implemented.")
                     break
@@ -1126,10 +1342,14 @@ def main(
                 process_fortran_library(
                     config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
                 )
+            elif config.is_go():
+                process_go_library(
+                    config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
+                )
             else:
                 click.echo("\n⚠️  This language is not yet implemented.")
                 click.echo(
-                    "Currently only Rust, C, C++, and Fortran library additions are supported."
+                    "Currently only Rust, C, C++, Fortran, and Go library additions are supported."
                 )
 
     except KeyboardInterrupt:

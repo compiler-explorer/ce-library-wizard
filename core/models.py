@@ -17,6 +17,7 @@ class Language(str, Enum):
     CPP = "C++"
     RUST = "Rust"
     FORTRAN = "Fortran"
+    GO = "Go"
 
 
 class BuildTool(str, Enum):
@@ -262,6 +263,8 @@ class LibraryConfig(BaseModel):
     library_type: LibraryType | None = None  # For C++ libraries
     library_id: str | None = None  # Library identifier for C++
     package_install: bool | None = None  # Whether CMake package installation is needed
+    module: str | None = None  # Go module path (e.g., github.com/google/uuid)
+    import_path: str | None = None  # Go import path override (when root package isn't importable)
 
     @field_validator("version")
     @classmethod
@@ -331,6 +334,8 @@ class LibraryConfig(BaseModel):
         """
         if self.language == Language.RUST:
             return  # Rust versions don't need git tag validation
+        if self.language == Language.GO:
+            return  # Go versions are validated via Go module proxy
 
         print("\nChecking git tags for version format...")
         missing_versions = self.normalize_versions_with_git_lookup()
@@ -370,3 +375,6 @@ class LibraryConfig(BaseModel):
 
     def is_rust(self) -> bool:
         return self.language == Language.RUST
+
+    def is_go(self) -> bool:
+        return self.language == Language.GO

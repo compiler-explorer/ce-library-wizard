@@ -130,6 +130,87 @@ libs.json-fortran.url=https://github.com/jacobwilliams/json-fortran
 libs.json-fortran.versions=8.5.0:8.4.0
 ```
 
+## Go Libraries
+
+### Overview
+Go support handles Go modules that are built using the `gomod` build type. Libraries are identified by their Go module path (e.g., `github.com/google/uuid`).
+
+### Requirements
+- Valid Go module path
+- Version must be a valid Go module version (typically with `v` prefix, e.g., `v1.6.0`)
+- Module must be available on the Go module proxy (proxy.golang.org)
+
+### Process
+1. **Library Addition**: Adds the module to `libraries.yaml` with `build_type: gomod`
+2. **Property Updates**:
+   - Adds library to `libs=` line in `go.amazon.properties`
+   - Creates library-specific property entries with `lookupname`, `packagedheaders=true`
+
+### Import Path Override
+Some Go modules have a non-importable root package (e.g., `google.golang.org/protobuf`). In these cases, the wizard:
+1. **Auto-detects** the best importable subpackage by downloading the module zip from the Go proxy
+2. Sets the `import_path` field in `libraries.yaml` (e.g., `google.golang.org/protobuf/proto`)
+
+You can also manually specify the import path with `--import-path`:
+```bash
+./run.sh --lang=go --lib=google.golang.org/protobuf --ver=v1.36.0 --import-path=google.golang.org/protobuf/proto
+```
+
+### Subpackage Path Resolution
+If you pass a subpackage path as `--lib` (e.g., `google.golang.org/protobuf/proto`), the wizard automatically resolves it to the actual module root (`google.golang.org/protobuf`) and sets the original path as the `import_path`.
+
+### Examples
+```bash
+# Single version
+./run.sh --lang=go --lib=github.com/google/uuid --ver=v1.6.0
+
+# Multiple versions
+./run.sh --lang=go --lib=google.golang.org/protobuf --ver=v1.34.1,v1.36.0
+
+# With explicit import path
+./run.sh --lang=go --lib=google.golang.org/protobuf --ver=v1.36.0 --import-path=google.golang.org/protobuf/proto
+
+# Passing a subpackage path (auto-resolves to module root)
+./run.sh --lang=go --lib=google.golang.org/protobuf/proto --ver=v1.36.0
+```
+
+### Property File Format
+```properties
+libs=uuid:protobuf:errors
+
+libs.uuid.name=google/uuid
+libs.uuid.url=https://github.com/google/uuid
+libs.uuid.lookupname=go_uuid
+libs.uuid.packagedheaders=true
+libs.uuid.versions=v160
+libs.uuid.versions.v160.version=v1.6.0
+```
+
+### libraries.yaml Format
+```yaml
+go:
+  uuid:
+    build_type: gomod
+    module: github.com/google/uuid
+    targets:
+    - v1.6.0
+    type: gomod
+  protobuf:
+    build_type: gomod
+    import_path: google.golang.org/protobuf/proto
+    module: google.golang.org/protobuf
+    targets:
+    - v1.36.0
+    type: gomod
+```
+
+### Key Differences from Other Languages
+- Uses Go module path instead of GitHub URL for identification
+- All Go libraries use `packagedheaders=true`
+- Uses `lookupname` with `go_` prefix (e.g., `go_uuid`)
+- No `staticliblink` or `path` fields needed
+- Version keys strip non-alphanumeric characters (e.g., `v1.6.0` -> `v160`)
+
 ## Library ID Conventions
 
 All languages follow these naming conventions:
@@ -174,6 +255,7 @@ When multiple versions are specified:
 - C++: `etc/config/c++.amazon.properties`
 - Rust: `etc/config/rust.amazon.properties`
 - Fortran: `etc/config/fortran.amazon.properties`
+- Go: `etc/config/go.amazon.properties`
 
 ### Update Process
 1. Properties are generated/updated automatically
