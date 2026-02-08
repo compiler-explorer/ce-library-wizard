@@ -6,6 +6,11 @@ import re
 import tempfile
 from pathlib import Path
 
+from .build_tester import (
+    BuildTestResult,
+    check_fortran_build_test_available,
+    run_fortran_build_test,
+)
 from .constants import FORTRAN_PROPERTIES_PATH, GITHUB_URL_REQUIRED, MAIN_REPO_PATH_REQUIRED
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
@@ -175,3 +180,40 @@ class FortranHandler:
         except Exception as e:
             logger.error(f"Error updating Fortran properties: {e}")
             return False
+
+    def is_build_test_available(self) -> tuple[bool, str]:
+        """
+        Check if Fortran build testing is available (Fortran compiler installed).
+
+        Returns:
+            Tuple of (available, message)
+        """
+        return check_fortran_build_test_available(self.infra_path, self.debug)
+
+    def run_build_test(
+        self,
+        library_id: str,
+        version: str,
+        compiler_id: str | None = None,
+    ) -> BuildTestResult:
+        """
+        Test building the Fortran library using ce_install build command.
+
+        Fortran libraries using FPM are compiled during the build step,
+        producing static libraries (.a) and module files (.mod).
+
+        Args:
+            library_id: The library identifier
+            version: The library version
+            compiler_id: Specific Fortran compiler ID to use (auto-detected if None)
+
+        Returns:
+            BuildTestResult with success status, message, and artifact information
+        """
+        return run_fortran_build_test(
+            infra_path=self.infra_path,
+            library_id=library_id,
+            version=version,
+            compiler_id=compiler_id,
+            debug=self.debug,
+        )

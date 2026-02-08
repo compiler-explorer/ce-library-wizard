@@ -29,6 +29,7 @@ C_PROPERTIES_PATH = "etc/config/c.amazon.properties"
 CPP_PROPERTIES_PATH = "etc/config/c++.amazon.properties"
 FORTRAN_PROPERTIES_PATH = "etc/config/fortran.amazon.properties"
 RUST_PROPERTIES_PATH = "etc/config/rust.amazon.properties"
+GO_PROPERTIES_PATH = "etc/config/go.amazon.properties"
 LIBRARIES_YAML_PATH = "bin/yaml/libraries.yaml"
 
 # Validation Messages

@@ -96,10 +96,54 @@ For libraries that require CMake configuration of headers:
 ./run.sh --lang=cpp --lib=https://github.com/eigen/eigen --ver=3.4.0 --type=packaged-headers
 ```
 
-### Test Installation (C++ only)
+### Test Installation (C/C++ only)
 Validate that the library installs correctly:
 ```bash
 ./run.sh --install-test --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
+```
+
+### Test Build (C/C++/Rust/Fortran)
+Test building the library and verify artifacts are produced correctly.
+Requires a compiler installed via `ce_install`:
+
+**C/C++ libraries** (requires gcc or clang):
+```bash
+./run.sh --build-test=yes --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+```
+
+**Rust crates** (requires Rust compiler):
+```bash
+./run.sh --build-test=yes --lang=rust --lib=serde --ver=1.0.219
+```
+
+**Fortran libraries** (requires gfortran via gcc):
+```bash
+./run.sh --build-test=yes --lang=fortran --lib=https://github.com/jacobwilliams/json-fortran --ver=8.3.0
+```
+
+Build test modes:
+- `auto` (default): Run if a compiler is available and the library type requires building
+- `yes`: Force run build test (fails if no compiler available)
+- `no`: Skip build test entirely
+
+Note: Header-only libraries are automatically skipped in `auto` mode since they don't require compilation.
+
+This will:
+- Auto-detect the latest installed compiler (prefers gfortran for Fortran)
+- Build the library in a staging directory
+- List all artifacts produced (libraries, headers, .rlib files, Fortran modules, etc.)
+- For C/C++: Verify that expected link libraries (from `staticliblink`/`sharedliblink` config) are present
+
+### Dry Run Mode
+Preview all changes without committing or creating PRs:
+```bash
+./run.sh --dry-run --lang=rust --lib=serde --ver=1.0.219
+```
+
+### Skip Confirmation Prompts
+Use `-y` or `--yes` to skip confirmation prompts (useful for automation):
+```bash
+./run.sh -y --lang=rust --lib=serde --ver=1.0.219
 ```
 
 ### Keep Temporary Files

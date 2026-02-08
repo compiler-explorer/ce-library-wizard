@@ -20,9 +20,11 @@ libraries=(
 for lib in "${libraries[@]}"; do
     IFS=':' read -r lang name ver <<< "$lib"
     echo "Adding $lang library $name version $ver..."
-    ./run.sh --lang="$lang" --lib="$name" --ver="$ver"
+    ./run.sh -y --build-test=no --lang="$lang" --lib="$name" --ver="$ver"
 done
 ```
+
+Note: Use `-y` to skip confirmations and `--build-test=no` to speed up batch operations.
 
 ### CI/CD Integration
 Use CE Library Wizard in automated workflows:
@@ -36,11 +38,16 @@ on:
       language:
         required: true
         type: choice
-        options: [rust, cpp, fortran]
+        options: [rust, cpp, c, fortran]
       library:
         required: true
       version:
         required: true
+      build_test:
+        required: false
+        type: choice
+        options: [auto, yes, no]
+        default: auto
 
 jobs:
   add-library:
@@ -52,11 +59,15 @@ jobs:
           python-version: '3.12'
       - run: |
           ./run.sh \
+            -y \
             --lang=${{ inputs.language }} \
             --lib=${{ inputs.library }} \
             --ver=${{ inputs.version }} \
+            --build-test=${{ inputs.build_test }} \
             --github-token=${{ secrets.GITHUB_TOKEN }}
 ```
+
+Note the `-y` flag to skip confirmation prompts in CI environments.
 
 ## Advanced Authentication
 
@@ -77,7 +88,7 @@ Minimum required token permissions:
 ## Installation Testing Deep Dive
 
 ### Understanding --install-test
-The `--install-test` flag for C++ libraries:
+The `--install-test` flag for C/C++ libraries:
 
 1. **What it does:**
    - Downloads and installs the library locally
@@ -102,6 +113,183 @@ Test installations manually:
 ```bash
 cd /tmp/ce-lib-wizard-*/infra
 poetry run ce_install install "library_id version"
+```
+
+## Build Testing Deep Dive
+
+### Understanding --build-test
+The `--build-test` option tests that libraries requiring compilation actually build correctly:
+
+**Modes:**
+- `auto` (default): Run if compiler available AND library needs building (skips header-only)
+- `yes`: Force run build test, fail if no compiler available
+- `no`: Skip build testing entirely
+
+```bash
+# Auto mode (default) - runs if compiler available
+./run.sh --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+
+# Force build test
+./run.sh --build-test=yes --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+
+# Skip build test
+./run.sh --build-test=no --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+```
+
+1. **What it does:**
+   - Detects installed compilers (gcc, clang, rust, gfortran) via `ce_install`
+   - Runs a dry-run build using the latest compiler
+   - Captures all produced artifacts (libraries, headers, pkg-config files)
+   - Verifies that expected link libraries match what was built
+
+2. **Requirements:**
+   - A compiler must be installed via `ce_install` (e.g., gcc 14.2.0)
+   - The infra repository must be cloned
+
+3. **What's checked:**
+   - Build completes successfully
+   - Expected `.a` files exist for `staticliblink` entries
+   - Expected `.so` files exist for `sharedliblink` entries
+
+4. **Auto-skip conditions:**
+   - Header-only libraries (no compilation needed)
+   - No compiler available (in auto mode only)
+
+### Example Output
+```
+🔨 Running build test... (Build testing available with gcc 15.2.0 (g152))
+✓ Build test passed
+  Artifacts produced:
+  Libraries: libz.a, libz.so, libz.so.1, libz.so.1.3.1
+  Headers: zconf.h, zlib.h
+  Other: zlib.pc, zlib.3
+  Link library verification:
+  ✓ -lz (static)
+```
+
+### Manual Build Testing
+Test builds manually using ce_install:
+
+```bash
+cd /opt/compiler-explorer/infra
+
+# List installed compilers
+bin/ce_install --filter-match-all list --installed-only --show-compiler-ids --json gcc '!cross'
+
+# Run a build test (dry-run mode, keeps staging directory)
+bin/ce_install --debug --dry-run --keep-staging build --temp-install --buildfor g152 'libraries/c++/zlib 1.3.1'
+
+# Check the staging directory for artifacts
+ls -la /tmp/ce-cefs-temp/staging/*/install/
+```
+
+### Verifying Link Libraries
+The build test reads `staticliblink` and `sharedliblink` from `libraries.yaml` and verifies the corresponding library files were produced:
+
+```yaml
+# In libraries.yaml
+zlib:
+  lib_type: static
+  staticliblink:
+    - z  # Expects libz.a to be built
+```
+
+If a library is missing, you'll see:
+```
+Link library verification:
+✗ MISSING -lfoo (static)
+⚠️  Missing: libfoo.a
+```
+
+## Rust Build Testing
+
+### Understanding Rust Build Tests
+The `--build-test` flag also works for Rust crates:
+
+1. **What it does:**
+   - Detects installed Rust compilers via `ce_install`
+   - Downloads the crate from crates.io
+   - Builds with `cargo` in a staging directory
+   - Captures `.rlib` and `.rmeta` artifacts
+
+2. **Requirements:**
+   - A Rust compiler must be installed via `ce_install`
+
+3. **What's produced:**
+   - `.rlib` files (Rust library archives)
+   - `.rmeta` files (Rust metadata)
+
+### Example Rust Build Output
+```
+🔨 Running Rust build test... (Rust build testing available with rust 1.91.0 (r1910))
+✓ Build test passed
+  Artifacts produced:
+  Libraries: libserde-e092d98ee6dac194.rlib, libserde.rlib
+  Rust metadata: libserde-e092d98ee6dac194.rmeta, metadata.rmeta
+```
+
+### Manual Rust Build Testing
+Test Rust builds manually:
+
+```bash
+cd /opt/compiler-explorer/infra
+
+# List installed Rust compilers
+bin/ce_install --filter-match-all list --installed-only --show-compiler-ids --json rust '!nightly'
+
+# Run a Rust build test
+bin/ce_install --debug --dry-run --keep-staging build --temp-install --buildfor r1910 'libraries/rust/serde 1.0.219'
+
+# Check the staging directory for artifacts
+find /tmp/ce-cefs-temp/staging/*/r1910_*/build/debug -name "*.rlib"
+```
+
+## Fortran Build Testing
+
+### Understanding Fortran Build Tests
+The `--build-test` option also works for Fortran libraries:
+
+1. **What it does:**
+   - Detects installed Fortran compilers (prefers gfortran from gcc)
+   - Downloads and builds the FPM package
+   - Compiles source into static libraries and module files
+   - Verifies `.a` and `.mod` files are produced
+
+2. **Requirements:**
+   - gfortran (included with gcc) or another Fortran compiler via `ce_install`
+
+3. **What's produced:**
+   - Static library archives (`.a` files, e.g., `libjson-fortran.a`)
+   - Fortran module files (`.mod` files for `use` statements)
+
+4. **Compiler preference:**
+   - gfortran (from gcc) - most compatible, preferred
+   - LFortran - modern Fortran compiler
+   - Intel Fortran - fallback option
+
+### Example Fortran Build Output
+```
+🔨 Running Fortran build test... (Fortran build testing available with gfortran (gcc 15.2.0) 15.2.0 (g152))
+✓ Build test passed
+  Artifacts produced:
+  Libraries: libjson-fortran.a
+  Fortran modules: json_file_module.mod, json_kinds.mod, json_module.mod, ...
+```
+
+### Manual Fortran Build Testing
+Test Fortran builds manually:
+
+```bash
+cd /opt/compiler-explorer/infra
+
+# gfortran comes with gcc - use a gcc compiler ID
+bin/ce_install --filter-match-all list --installed-only --show-compiler-ids --json gcc '!cross'
+
+# Run a Fortran build test using gcc compiler ID (includes gfortran)
+bin/ce_install --debug --keep-staging build --temp-install --buildfor g152 'libraries/fortran/json_fortran 8.3.0'
+
+# Check the staging directory for Fortran sources
+find /tmp/ce-cefs-temp/staging/ -name "*.f90" -o -name "*.F90"
 ```
 
 ## Working with Properties Files
@@ -187,6 +375,35 @@ make ce
 poetry run ce_install list
 poetry run ce_install add-crate serde 1.0.195
 ```
+
+## Automation Options
+
+### Non-Interactive Mode
+Skip all confirmation prompts with `-y` or `--yes`:
+```bash
+# Automatically proceed without confirmation
+./run.sh -y --lang=rust --lib=serde --ver=1.0.219
+
+# Combine with other options for full automation
+./run.sh -y --build-test=no --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
+```
+
+### Dry Run Mode
+Preview changes without committing or creating PRs:
+```bash
+# See what would be changed
+./run.sh --dry-run --lang=rust --lib=serde --ver=1.0.219
+
+# Combine with build test to validate everything
+./run.sh --dry-run --build-test=yes --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+```
+
+Dry run mode:
+- Clones repositories and makes changes locally
+- Shows diff of all changes that would be made
+- Does NOT commit changes
+- Does NOT create pull requests
+- Useful for validating configuration before actual run
 
 ## Customization Options
 

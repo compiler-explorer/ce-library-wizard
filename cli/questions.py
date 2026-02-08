@@ -1,5 +1,10 @@
+import re
+from pathlib import Path
+
 import inquirer
 
+from core.cpp_handler import CppHandler
+from core.go_handler import GoHandler, detect_import_path, resolve_go_module
 from core.library_utils import filter_main_cmake_targets
 from core.models import BuildTool, Language, LibraryConfig, LibraryType, LinkType
 
@@ -41,10 +46,83 @@ def ask_library_questions() -> LibraryConfig:
         config = LibraryConfig(
             language=language, name=rust_name_answer["name"], version=rust_version_answer["version"]
         )
-        # Rust versions don't need git tag checking since they use crates.io
         return config
 
-    # For non-Rust languages, ask for GitHub URL
+    # Special handling for Go - need module path and version
+    if language == Language.GO:
+        go_module_question = [
+            inquirer.Text(
+                "module",
+                message="What's the Go module path? (e.g., github.com/google/uuid)",
+                validate=lambda _, x: len(x.strip()) > 0 and "/" in x,
+            )
+        ]
+        go_module_answer = inquirer.prompt(go_module_question)
+
+        go_version_question = [
+            inquirer.Text(
+                "version",
+                message="What's the version(s)? (e.g., v1.6.0, comma-separated for multiple)",
+                validate=lambda _, x: len(x.strip()) > 0,
+            )
+        ]
+        go_version_answer = inquirer.prompt(go_version_question)
+
+        module_path = go_module_answer["module"]
+        version_str = go_version_answer["version"]
+        first_version = version_str.split(",")[0].strip()
+
+        # Resolve module path (handles subpackage paths)
+        print("\nResolving module path...")
+        resolved_module, resolved_import = resolve_go_module(module_path, first_version)
+        if resolved_module != module_path:
+            print(f"Resolved subpackage to module: {resolved_module}")
+            print(f"  import path: {resolved_import}")
+            module_path = resolved_module
+
+        suggested_id = GoHandler.suggest_library_id_static(module_path)
+
+        go_id_question = [
+            inquirer.Text(
+                "library_id",
+                message="What should be the library ID? (lowercase with underscores)",
+                default=suggested_id,
+                validate=lambda _, x: bool(re.match(r"^[a-z][a-z0-9_]*$", x.strip()))
+                or "Must start with a letter, lowercase alphanumeric and underscores only",
+            )
+        ]
+        go_id_answer = inquirer.prompt(go_id_question)
+
+        # Auto-detect import path if not already resolved from subpackage
+        detected_import_path = resolved_import
+        if not detected_import_path:
+            print("\nChecking module structure...")
+            detected_import_path = detect_import_path(module_path, first_version)
+            if detected_import_path:
+                print(f"Root package not importable, detected: {detected_import_path}")
+            else:
+                print("Root package is importable")
+
+        go_import_path_question = [
+            inquirer.Text(
+                "import_path",
+                message="Import path override (leave empty if root is importable)",
+                default=detected_import_path or "",
+            )
+        ]
+        go_import_path_answer = inquirer.prompt(go_import_path_question)
+        import_path = go_import_path_answer["import_path"].strip() or None
+
+        config = LibraryConfig(
+            language=language,
+            module=module_path,
+            version=version_str,
+            library_id=go_id_answer["library_id"],
+            import_path=import_path,
+        )
+        return config
+
+    # For non-Rust/Go languages, ask for GitHub URL
     github_question = [
         inquirer.Text(
             "github_url",
@@ -76,10 +154,6 @@ def ask_library_questions() -> LibraryConfig:
 
     # C++ specific questions
     if language == Language.CPP:
-        # First, ask for library ID
-        from core.cpp_handler import CppHandler
-
-        # Use a temporary instance just for ID suggestion (no path needed)
         suggested_id = CppHandler.suggest_library_id_static(github_answer["github_url"])
 
         library_id_question = [
@@ -94,11 +168,7 @@ def ask_library_questions() -> LibraryConfig:
         library_id_answer = inquirer.prompt(library_id_question)
         config_data["library_id"] = library_id_answer["library_id"]
 
-        # Detect library type by cloning and checking
         print("\nAnalyzing repository to detect library type...")
-        # Create a temporary handler just for detection (no ce_install setup needed)
-        from pathlib import Path
-
         cpp_handler = CppHandler(Path.home(), setup_ce_install=False, debug=False)
         is_valid, detected_type, cmake_targets = cpp_handler.detect_library_type(
             github_answer["github_url"], library_id_answer["library_id"]
