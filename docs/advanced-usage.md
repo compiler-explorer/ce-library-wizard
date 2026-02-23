@@ -349,6 +349,22 @@ export GIT_CURL_VERBOSE=1
 ./run.sh --debug ...
 ```
 
+### Pinning Repositories to a Specific Commit
+When debugging, you may want to test against a specific version of the infra or compiler-explorer repo rather than the latest. Use the `CE_DEBUG_PIN_<REPO>_COMMIT` environment variable to pin a repo to a specific commit after sync:
+
+```bash
+# Pin infra to a specific commit
+CE_DEBUG_PIN_INFRA_COMMIT=abc123 ./run.sh --lang=c++ --lib=https://github.com/google/re2 --ver=2025-07-17
+
+# Pin compiler-explorer to a specific commit
+CE_DEBUG_PIN_COMPILER_EXPLORER_COMMIT=def456 ./run.sh --lang=rust --lib=serde --ver=1.0.219
+
+# Pin both repos
+CE_DEBUG_PIN_INFRA_COMMIT=abc123 CE_DEBUG_PIN_COMPILER_EXPLORER_COMMIT=def456 ./run.sh ...
+```
+
+The repo name in the variable is uppercased with hyphens replaced by underscores (e.g. `compiler-explorer` becomes `COMPILER_EXPLORER`).
+
 ### Inspecting Temporary Files
 ```bash
 # Keep temp directory after exit for debugging
@@ -420,6 +436,10 @@ export GITHUB_TOKEN=your_token_here
 # Custom OAuth app credentials (optional)
 export CE_GITHUB_CLIENT_ID=your_client_id
 export CE_GITHUB_CLIENT_SECRET=your_client_secret
+
+# Pin a repo to a specific commit for debugging (see Debugging section)
+export CE_DEBUG_PIN_INFRA_COMMIT=abc123
+export CE_DEBUG_PIN_COMPILER_EXPLORER_COMMIT=def456
 ```
 
 ### Custom Fork Names
