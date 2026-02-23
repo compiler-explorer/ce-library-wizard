@@ -49,10 +49,16 @@ def analyze_repository_structure(clone_path: Path) -> dict:
         {
             'has_cmake': bool,
             'cmake_targets': list[str] | None,
-            'main_targets': list[str] | None
+            'main_targets': list[str] | None,
+            'library_artifacts': list[str]  # e.g. ["libminiz.a"]
         }
     """
-    analysis = {"has_cmake": False, "cmake_targets": None, "main_targets": None}
+    analysis = {
+        "has_cmake": False,
+        "cmake_targets": None,
+        "main_targets": None,
+        "library_artifacts": [],
+    }
 
     try:
         # Check for CMakeLists.txt existence
@@ -61,12 +67,16 @@ def analyze_repository_structure(clone_path: Path) -> dict:
 
         # Try to get CMake targets if CMakeLists.txt exists
         if analysis["has_cmake"]:
-            analysis["cmake_targets"] = get_cmake_targets_from_path(clone_path)
+            build_path = clone_path / "build"
+            analysis["cmake_targets"] = get_cmake_targets_from_path(clone_path, build_path)
             if analysis["cmake_targets"]:
                 analysis["main_targets"] = filter_main_cmake_targets(analysis["cmake_targets"])
+                analysis["library_artifacts"] = get_library_artifacts_from_build(build_path)
                 logger.info(f"Found {len(analysis['cmake_targets'])} CMake targets")
                 if analysis["main_targets"]:
                     logger.info(f"Filtered to {len(analysis['main_targets'])} main targets")
+                if analysis["library_artifacts"]:
+                    logger.info(f"Found library artifacts: {analysis['library_artifacts']}")
 
         return analysis
 
@@ -97,19 +107,19 @@ def clone_and_analyze_repository(github_url: str) -> tuple[bool, dict]:
         return True, analysis
 
 
-def get_cmake_targets_from_path(clone_path: Path) -> list[str] | None:
+def get_cmake_targets_from_path(clone_path: Path, build_path: Path) -> list[str] | None:
     """
     Get CMake targets from an already cloned repository path.
 
     Args:
         clone_path: Path to the cloned repository
+        build_path: Path to use for the cmake build directory
 
     Returns:
         List of library target names, or None on error
     """
     try:
         # Configure CMake
-        build_path = clone_path / "build"
         result = run_command(
             ["cmake", "-B", str(build_path), "-S", str(clone_path)], clean_env=False
         )
@@ -154,6 +164,35 @@ def get_cmake_targets_from_path(clone_path: Path) -> list[str] | None:
     except Exception as e:
         logger.debug(f"Error getting CMake targets: {e}")
         return None
+
+
+def get_library_artifacts_from_build(build_path: Path) -> list[str]:
+    """
+    Parse cmake link.txt files to find library artifacts (.a/.so) that will be produced.
+
+    After cmake configure, each linkable target has a link.txt in
+    build/CMakeFiles/<target>.dir/link.txt containing the link command.
+
+    Returns list of artifact filenames (e.g., ["libminiz.a", "libfoo.so"]).
+    """
+    artifacts = []
+    link_files = list(build_path.glob("CMakeFiles/*.dir/link.txt"))
+    logger.debug(f"Found {len(link_files)} link.txt files in {build_path}")
+
+    for link_file in link_files:
+        try:
+            content = link_file.read_text(encoding="utf-8", errors="replace")
+            tokens = content.split()
+            for token in tokens:
+                filename = Path(token).name
+                if filename.startswith("lib") and (filename.endswith(".a") or ".so" in filename):
+                    if filename not in artifacts:
+                        artifacts.append(filename)
+        except Exception as e:
+            logger.debug(f"Error reading {link_file}: {e}")
+
+    logger.debug(f"Found library artifacts: {artifacts}")
+    return artifacts
 
 
 def filter_main_cmake_targets(targets: list[str]) -> list[str]:
@@ -261,8 +300,8 @@ def validate_cmake_targets_for_type(analysis: dict, library_type: LibraryType) -
     - is_ok=True: validation passed (message may be informational)
     - is_ok=False: validation failed (message describes the error)
     """
-    targets = analysis.get("cmake_targets", [])
-    has_library_artifacts = any(t.endswith(".a") or t.endswith(".so") for t in targets)
+    artifacts = analysis.get("library_artifacts", [])
+    has_library_artifacts = len(artifacts) > 0
 
     if library_type in (LibraryType.STATIC, LibraryType.SHARED, LibraryType.CSHARED):
         if not has_library_artifacts:
@@ -346,8 +385,13 @@ def detect_library_type_from_analysis(
 
     # Detect based on repository analysis
     if analysis.get("has_cmake"):
-        # Has CMakeLists.txt, assume it's a packaged-headers library
-        return True, LibraryType.PACKAGED_HEADERS.value
+        artifacts = analysis.get("library_artifacts", [])
+        if any(a.endswith(".a") for a in artifacts):
+            return True, LibraryType.STATIC.value
+        elif any(a.endswith(".so") or ".so." in a for a in artifacts):
+            return True, LibraryType.SHARED.value
+        else:
+            return True, LibraryType.PACKAGED_HEADERS.value
     else:
         # No CMakeLists.txt, could be header-only or require manual configuration
         return True, LibraryType.HEADER_ONLY.value
