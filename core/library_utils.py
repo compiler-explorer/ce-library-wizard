@@ -50,7 +50,8 @@ def analyze_repository_structure(clone_path: Path) -> dict:
             'has_cmake': bool,
             'cmake_targets': list[str] | None,
             'main_targets': list[str] | None,
-            'library_artifacts': list[str]  # e.g. ["libminiz.a"]
+            'library_artifacts': list[str],  # e.g. ["libminiz.a"]
+            'has_generated_headers': bool
         }
     """
     analysis = {
@@ -58,6 +59,7 @@ def analyze_repository_structure(clone_path: Path) -> dict:
         "cmake_targets": None,
         "main_targets": None,
         "library_artifacts": [],
+        "has_generated_headers": False,
     }
 
     try:
@@ -72,11 +74,14 @@ def analyze_repository_structure(clone_path: Path) -> dict:
             if analysis["cmake_targets"]:
                 analysis["main_targets"] = filter_main_cmake_targets(analysis["cmake_targets"])
                 analysis["library_artifacts"] = get_library_artifacts_from_build(build_path)
+                analysis["has_generated_headers"] = has_generated_headers(clone_path, build_path)
                 logger.info(f"Found {len(analysis['cmake_targets'])} CMake targets")
                 if analysis["main_targets"]:
                     logger.info(f"Filtered to {len(analysis['main_targets'])} main targets")
                 if analysis["library_artifacts"]:
                     logger.info(f"Found library artifacts: {analysis['library_artifacts']}")
+                if analysis["has_generated_headers"]:
+                    logger.info("Detected generated headers in build directory")
 
         return analysis
 
@@ -175,7 +180,8 @@ def get_library_artifacts_from_build(build_path: Path) -> list[str]:
 
     Returns list of artifact filenames (e.g., ["libminiz.a", "libfoo.so"]).
     """
-    artifacts = []
+    simple = []
+    versioned = []
     link_files = list(build_path.glob("CMakeFiles/*.dir/link.txt"))
     logger.debug(f"Found {len(link_files)} link.txt files in {build_path}")
 
@@ -186,13 +192,34 @@ def get_library_artifacts_from_build(build_path: Path) -> list[str]:
             for token in tokens:
                 filename = Path(token).name
                 if filename.startswith("lib") and (filename.endswith(".a") or ".so" in filename):
-                    if filename not in artifacts:
-                        artifacts.append(filename)
+                    target = simple if filename.count(".") == 1 else versioned
+                    if filename not in target:
+                        target.append(filename)
         except Exception as e:
             logger.debug(f"Error reading {link_file}: {e}")
 
+    artifacts = simple if simple else versioned
     logger.debug(f"Found library artifacts: {artifacts}")
     return artifacts
+
+
+def has_generated_headers(clone_path: Path, build_path: Path) -> bool:
+    """
+    Check if cmake generated any header files in the build directory.
+
+    Generated headers (e.g. from generate_export_header()) only exist in
+    the build tree. If present, the library needs packaged-headers type
+    so cmake --install places them in the include directory.
+    """
+    header_exts = (".h", ".hpp", ".hxx", ".hh")
+    for header in build_path.rglob("*"):
+        if header.is_file() and header.suffix in header_exts:
+            # Ignore CMake's own internal headers
+            if "CMakeFiles" in header.parts:
+                continue
+            logger.debug(f"Found generated header: {header}")
+            return True
+    return False
 
 
 def filter_main_cmake_targets(targets: list[str]) -> list[str]:
@@ -309,19 +336,22 @@ def validate_cmake_targets_for_type(analysis: dict, library_type: LibraryType) -
                 False,
                 "CMake targets do not indicate library artifacts (.a/.so) will be produced",
             )
+        if analysis.get("has_generated_headers"):
+            return (
+                True,
+                "CMake generates headers during build"
+                " — using package_install for cmake --install",
+            )
         return (True, "")
 
     if library_type == LibraryType.PACKAGED_HEADERS:
-        if has_library_artifacts:
+        if has_library_artifacts and not analysis.get("has_generated_headers"):
             return (
                 False,
                 "CMake targets indicate library artifacts (.a/.so) will be produced"
                 " — this may not be a packaged-headers library",
             )
-        return (
-            True,
-            "No library artifacts found in cmake target list (expected for packaged-headers)",
-        )
+        return (True, "")
 
     # header-only: no validation needed
     return (True, "")
@@ -401,6 +431,10 @@ def get_link_targets_from_analysis(analysis: dict, library_type_value: str) -> l
     """
     Get link targets from repository analysis based on library type.
 
+    When library_artifacts are available (parsed from cmake link.txt files),
+    derive link names from them (strip lib prefix and .a/.so suffix).
+    Otherwise fall back to cmake main_targets.
+
     Args:
         analysis: Repository analysis results
         library_type_value: Library type value (e.g., 'static', 'shared', 'cshared')
@@ -408,7 +442,27 @@ def get_link_targets_from_analysis(analysis: dict, library_type_value: str) -> l
     Returns:
         List of link targets or None if not applicable
     """
-    if library_type_value in ["static", "shared", "cshared"] and analysis.get("main_targets"):
+    if library_type_value not in ["static", "shared", "cshared"]:
+        return None
+
+    artifacts = analysis.get("library_artifacts", [])
+    if artifacts:
+        link_names = []
+        for artifact in artifacts:
+            name = artifact
+            # Strip lib prefix
+            if name.startswith("lib"):
+                name = name[3:]
+            # Strip suffix (.a or .so / .so.*)
+            if name.endswith(".a"):
+                name = name[:-2]
+            elif ".so" in name:
+                name = name[: name.index(".so")]
+            if name and name not in link_names:
+                link_names.append(name)
+        return link_names if link_names else None
+
+    if analysis.get("main_targets"):
         return analysis["main_targets"]
     return None
 

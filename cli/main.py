@@ -123,6 +123,12 @@ def process_cpp_library(
                         build_result = cpp_handler.run_build_test(library_id, config.version)
                         if not build_result.success:
                             click.echo("❌ Build test failed.", err=True)
+                            if build_result.staging_dir:
+                                git_mgr.keep_temp = True
+                                click.echo(
+                                    f"   Build directory: {build_result.staging_dir}",
+                                    err=True,
+                                )
                             if is_auto_mode:
                                 click.echo(
                                     "   💡 Hint: Use --build-test=no to skip build testing "
@@ -143,6 +149,14 @@ def process_cpp_library(
                                     f"  ⚠️  Missing: {', '.join(build_result.missing_links)}",
                                     err=True,
                                 )
+                                if build_result.staging_dir:
+                                    git_mgr.keep_temp = True
+                                    click.echo(
+                                        f"   Build directory: {build_result.staging_dir}",
+                                        err=True,
+                                    )
+                                click.echo("Aborting.", err=True)
+                                return
 
             # Show diffs if verify or dry_run flag is set
             if verify or dry_run:
@@ -292,6 +306,12 @@ def process_rust_library(
                         build_result = rust_handler.run_build_test(config.name, config.version)
                         if not build_result.success:
                             click.echo("❌ Build test failed.", err=True)
+                            if build_result.staging_dir:
+                                git_mgr.keep_temp = True
+                                click.echo(
+                                    f"   Build directory: {build_result.staging_dir}",
+                                    err=True,
+                                )
                             if is_auto_mode:
                                 click.echo(
                                     "   💡 Hint: Use --build-test=no to skip build testing "
@@ -460,6 +480,12 @@ def process_c_library(
                         build_result = c_handler.run_build_test(library_id, config.version)
                         if not build_result.success:
                             click.echo("❌ Build test failed.", err=True)
+                            if build_result.staging_dir:
+                                git_mgr.keep_temp = True
+                                click.echo(
+                                    f"   Build directory: {build_result.staging_dir}",
+                                    err=True,
+                                )
                             if is_auto_mode:
                                 click.echo(
                                     "   💡 Hint: Use --build-test=no to skip build testing "
@@ -480,6 +506,14 @@ def process_c_library(
                                     f"  ⚠️  Missing: {', '.join(build_result.missing_links)}",
                                     err=True,
                                 )
+                                if build_result.staging_dir:
+                                    git_mgr.keep_temp = True
+                                    click.echo(
+                                        f"   Build directory: {build_result.staging_dir}",
+                                        err=True,
+                                    )
+                                click.echo("Aborting.", err=True)
+                                return
 
             # Show diffs if verify or dry_run flag is set
             if verify or dry_run:
@@ -800,6 +834,12 @@ def process_fortran_library(
                         build_result = fortran_handler.run_build_test(library_id, config.version)
                         if not build_result.success:
                             click.echo("❌ Build test failed.", err=True)
+                            if build_result.staging_dir:
+                                git_mgr.keep_temp = True
+                                click.echo(
+                                    f"   Build directory: {build_result.staging_dir}",
+                                    err=True,
+                                )
                             if is_auto_mode:
                                 click.echo(
                                     "   💡 Hint: Use --build-test=no to skip build testing "
@@ -989,6 +1029,12 @@ def process_go_library(
                         build_result = go_handler.run_build_test(library_id, config.version)
                         if not build_result.success:
                             click.echo("Build test failed.", err=True)
+                            if build_result.staging_dir:
+                                git_mgr.keep_temp = True
+                                click.echo(
+                                    f"   Build directory: {build_result.staging_dir}",
+                                    err=True,
+                                )
                             if is_auto_mode:
                                 click.echo(
                                     "   Hint: Use --build-test=no to skip build testing "
@@ -1264,13 +1310,20 @@ def main(
                             exit(1)
 
                 # Set package install based on type and flag
-                if config.library_type == LibraryType.PACKAGED_HEADERS:
-                    # packaged-headers always uses package installation
+                if config.library_type in (
+                    LibraryType.PACKAGED_HEADERS,
+                    LibraryType.STATIC,
+                    LibraryType.SHARED,
+                    LibraryType.CSHARED,
+                ):
                     config.package_install = True
-                    click.echo("✓ Using CMake package installation (default for packaged-headers)")
+                    click.echo(
+                        f"✓ Using CMake package installation"
+                        f" (default for {config.library_type.value})"
+                    )
                 elif package_install:
                     config.package_install = True
-                    click.echo("✓ Using CMake package installation for headers")
+                    click.echo("✓ Using CMake package installation")
 
                 config.validate_versions_and_exit_on_missing()
         else:

@@ -257,12 +257,17 @@ def get_latest_compiler(
 
 
 def _find_staging_dirs(output: str) -> list[str]:
-    """Extract staging directory paths from build output."""
-    # Pattern: /tmp/ce-cefs-temp/staging/<uuid>
-    pattern = r"/tmp/ce-cefs-temp/staging/[a-f0-9-]+"
-    matches = re.findall(pattern, output)
-    # Return unique paths
-    return list(set(matches))
+    """Extract staging directory paths from build output.
+
+    Returns unique paths, preferring directories that contain an install/
+    subdirectory or build artifacts over empty ones.
+    """
+    # Pattern: <any-path>/staging/<uuid>
+    pattern = r"/\S+/staging/[a-f0-9-]+"
+    matches = list(set(re.findall(pattern, output)))
+    # Sort so dirs with content (install/ or any subdirs) come first
+    matches.sort(key=lambda d: (not Path(d, "install").exists(), d))
+    return matches
 
 
 def _list_artifacts(install_dir: Path) -> list[str]:
@@ -424,11 +429,13 @@ def run_build_test(
         library_spec = f"libraries/{language}/{library_id} {version}"
 
         # Build the command
-        # Command: bin/ce_install --debug --dry-run --keep-staging --force-traditional build
-        #          --temp-install --buildfor <compiler_id> '<library_spec>'
+        # bin/ce_install [--debug] --dry-run --dest <dir> --keep-staging
+        # --force-traditional build --temp-install --buildfor <id> '<spec>'
+        dest_path = str(infra_path.parent / "build-test")
         subcommand = [
-            "--debug",
             "--dry-run",
+            "--dest",
+            dest_path,
             "--keep-staging",
             "--force-traditional",
             "build",
@@ -437,6 +444,8 @@ def run_build_test(
             compiler_id,
             library_spec,
         ]
+        if debug:
+            subcommand.insert(0, "--debug")
 
         logger.info(f"Running build test for {library_id} {version} with {compiler_id}...")
         logger.info(f"Command: bin/ce_install {' '.join(subcommand)}")
@@ -445,29 +454,53 @@ def run_build_test(
 
         output = f"{result.stdout}\n{result.stderr}".strip()
 
+        # Parse staging directories from output
+        staging_dirs = _find_staging_dirs(output)
+        staging_dir = staging_dirs[0] if staging_dirs else None
+
         if result.returncode != 0:
             logger.error(f"Build test failed with exit code {result.returncode}")
+            if staging_dir:
+                logger.error(f"Build directory preserved at: {staging_dir}")
             if debug:
                 logger.debug(f"Output: {output}")
             return BuildTestResult(
                 success=False,
                 message=f"Build test failed: {output}",
                 compiler_id=compiler_id,
+                staging_dir=staging_dir,
             )
-
-        # Parse staging directories from output
-        staging_dirs = _find_staging_dirs(output)
-        staging_dir = staging_dirs[0] if staging_dirs else None
         install_dir = None
         artifacts: list[str] = []
 
-        if staging_dir:
-            # Check for install directory
-            install_path = Path(staging_dir) / "install"
+        # Search all staging dirs for artifacts
+        for sdir in staging_dirs:
+            staging_path = Path(sdir)
+            # Check for install directory (used when package_install is set)
+            install_path = staging_path / "install"
             if install_path.exists():
-                install_dir = str(install_path)
-                artifacts = _list_artifacts(install_path)
-                logger.info(f"Found {len(artifacts)} artifacts in {install_dir}")
+                found = _list_artifacts(install_path)
+                if found:
+                    install_dir = str(install_path)
+                    artifacts = found
+                    logger.info(f"Found {len(found)} artifacts in {install_dir}")
+                else:
+                    logger.warning(f"Empty install directory in {sdir}")
+                continue
+            # Fall back to searching build subdirs (no package_install)
+            found_in_subdir = False
+            for subdir in sorted(staging_path.iterdir()):
+                if subdir.is_dir():
+                    found = _list_artifacts(subdir)
+                    if found:
+                        if not artifacts:
+                            install_dir = str(subdir)
+                            artifacts = found
+                        logger.info(f"Found {len(found)} artifacts in {subdir}")
+                        found_in_subdir = True
+                        break
+            if not found_in_subdir:
+                logger.warning(f"No build artifacts found in {sdir}")
 
         # Verify link libraries
         static_links, shared_links = _get_expected_link_libraries(infra_path, library_id, language)
@@ -716,9 +749,11 @@ def run_rust_build_test(
         library_spec = f"libraries/rust/{crate_name} {version}"
 
         # Build the command
+        dest_path = str(infra_path.parent / "build-test")
         subcommand = [
-            "--debug",
             "--dry-run",
+            "--dest",
+            dest_path,
             "--keep-staging",
             "--force-traditional",
             "build",
@@ -727,6 +762,8 @@ def run_rust_build_test(
             compiler_id,
             library_spec,
         ]
+        if debug:
+            subcommand.insert(0, "--debug")
 
         logger.info(f"Running Rust build test for {crate_name} {version} with {compiler_id}...")
         logger.info(f"Command: bin/ce_install {' '.join(subcommand)}")
@@ -979,8 +1016,10 @@ def run_fortran_build_test(
 
         # Build the command - note: we can't use --dry-run for fpm libraries
         # as they need to be "installed" (source extracted) to verify
+        dest_path = str(infra_path.parent / "build-test")
         subcommand = [
-            "--debug",
+            "--dest",
+            dest_path,
             "--keep-staging",
             "--force-traditional",
             "build",
@@ -989,6 +1028,8 @@ def run_fortran_build_test(
             compiler_id,
             library_spec,
         ]
+        if debug:
+            subcommand.insert(0, "--debug")
 
         logger.info(f"Running Fortran build test for {library_id} {version}...")
         logger.info(f"Command: bin/ce_install {' '.join(subcommand)}")
@@ -1224,8 +1265,10 @@ def run_go_build_test(
         library_spec = f"libraries/go/{library_id} {version}"
 
         # Build the command
+        dest_path = str(infra_path.parent / "build-test")
         subcommand = [
-            "--debug",
+            "--dest",
+            dest_path,
             "--keep-staging",
             "--force-traditional",
             "build",
@@ -1234,6 +1277,8 @@ def run_go_build_test(
             compiler_id,
             library_spec,
         ]
+        if debug:
+            subcommand.insert(0, "--debug")
 
         logger.info(f"Running Go build test for {library_id} {version} with {compiler_id}...")
         logger.info(f"Command: bin/ce_install {' '.join(subcommand)}")
