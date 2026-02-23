@@ -424,12 +424,13 @@ def run_build_test(
         library_spec = f"libraries/{language}/{library_id} {version}"
 
         # Build the command
-        # Command: bin/ce_install --debug --dry-run --keep-staging build
+        # Command: bin/ce_install --debug --dry-run --keep-staging --force-traditional build
         #          --temp-install --buildfor <compiler_id> '<library_spec>'
         subcommand = [
             "--debug",
             "--dry-run",
             "--keep-staging",
+            "--force-traditional",
             "build",
             "--temp-install",
             "--buildfor",
@@ -719,6 +720,7 @@ def run_rust_build_test(
             "--debug",
             "--dry-run",
             "--keep-staging",
+            "--force-traditional",
             "build",
             "--temp-install",
             "--buildfor",
@@ -980,6 +982,7 @@ def run_fortran_build_test(
         subcommand = [
             "--debug",
             "--keep-staging",
+            "--force-traditional",
             "build",
             "--temp-install",
             "--buildfor",
@@ -1224,6 +1227,7 @@ def run_go_build_test(
         subcommand = [
             "--debug",
             "--keep-staging",
+            "--force-traditional",
             "build",
             "--temp-install",
             "--buildfor",
