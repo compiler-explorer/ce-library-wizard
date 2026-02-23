@@ -14,6 +14,11 @@ from core.fortran_handler import FortranHandler
 from core.git_operations import GitManager
 from core.github_auth import get_github_token_via_gh_cli, get_github_token_via_oauth
 from core.go_handler import GoHandler, detect_import_path, resolve_go_module
+from core.library_utils import (
+    clone_and_analyze_repository,
+    detect_library_type_from_analysis,
+    validate_cmake_targets_for_type,
+)
 from core.models import Language, LibraryConfig, LibraryType
 from core.rust_handler import RustLibraryHandler
 from core.subprocess_utils import run_ce_install_command
@@ -1133,6 +1138,7 @@ def process_go_library(
     "--import-path",
     help="Go import path override (for modules where root package isn't importable)",
 )
+@click.option("--force", is_flag=True, help="Override cmake target validation warnings/errors")
 def main(
     debug: bool,
     github_token: str | None,
@@ -1150,6 +1156,7 @@ def main(
     type: str | None,
     package_install: bool,
     import_path: str | None,
+    force: bool,
 ):
     """CLI tool to add libraries to Compiler Explorer"""
     if debug:
@@ -1212,6 +1219,24 @@ def main(
                 elif language == Language.FORTRAN:
                     config.library_id = FortranHandler.suggest_library_id_static(lib)
 
+                # For C/C++ with GitHub URL: analyze repository
+                analysis = None
+                clone_success = False
+                if language in (Language.C, Language.CPP):
+                    click.echo("Analyzing repository...")
+                    clone_success, analysis = clone_and_analyze_repository(lib)
+
+                # Auto-detect library type if not specified (for C/C++ with GitHub URL)
+                if not type and language in (Language.C, Language.CPP):
+                    if analysis is not None and clone_success:
+                        is_valid, library_type_value = detect_library_type_from_analysis(analysis)
+                        if is_valid and library_type_value:
+                            config.library_type = LibraryType(library_type_value)
+                            click.echo(f"Auto-detected library type: {config.library_type.value}")
+                    if not config.library_type:
+                        click.echo("Could not detect library type, defaulting to packaged-headers")
+                        config.library_type = LibraryType.PACKAGED_HEADERS
+
                 # Set library type if provided
                 if type:
                     type_map = {
@@ -1223,6 +1248,20 @@ def main(
                     }
                     config.library_type = type_map[type.lower()]
                     click.echo(f"✓ Using specified library type: {config.library_type.value}")
+
+                # Validate cmake targets against type (auto-detected or explicit)
+                if analysis is not None and analysis.get("cmake_targets") and config.library_type:
+                    is_ok, message = validate_cmake_targets_for_type(analysis, config.library_type)
+                    if is_ok:
+                        if message:
+                            click.echo(f"  {message}")
+                    else:
+                        if force:
+                            click.echo(f"  {message} (continuing due to --force)")
+                        else:
+                            click.echo(f"  {message}", err=True)
+                            click.echo("Use --force to override this check.", err=True)
+                            exit(1)
 
                 # Set package install based on type and flag
                 if config.library_type == LibraryType.PACKAGED_HEADERS:

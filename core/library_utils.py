@@ -253,6 +253,41 @@ def suggest_library_id_from_github_url(github_url: str) -> str:
     return library_id or "unknown_library"
 
 
+def validate_cmake_targets_for_type(analysis: dict, library_type: LibraryType) -> tuple[bool, str]:
+    """
+    Validate cmake targets against the library type.
+
+    Returns (is_ok, message):
+    - is_ok=True: validation passed (message may be informational)
+    - is_ok=False: validation failed (message describes the error)
+    """
+    targets = analysis.get("cmake_targets", [])
+    has_library_artifacts = any(t.endswith(".a") or t.endswith(".so") for t in targets)
+
+    if library_type in (LibraryType.STATIC, LibraryType.SHARED, LibraryType.CSHARED):
+        if not has_library_artifacts:
+            return (
+                False,
+                "CMake targets do not indicate library artifacts (.a/.so) will be produced",
+            )
+        return (True, "")
+
+    if library_type == LibraryType.PACKAGED_HEADERS:
+        if has_library_artifacts:
+            return (
+                False,
+                "CMake targets indicate library artifacts (.a/.so) will be produced"
+                " — this may not be a packaged-headers library",
+            )
+        return (
+            True,
+            "No library artifacts found in cmake target list (expected for packaged-headers)",
+        )
+
+    # header-only: no validation needed
+    return (True, "")
+
+
 def detect_library_type_from_analysis(
     analysis: dict, existing_config: dict | None = None
 ) -> tuple[bool, str | None]:
