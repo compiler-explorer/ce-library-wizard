@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import tempfile
 import time
@@ -160,6 +161,16 @@ class GitManager:
                 self._run_git_command(["git", "push", "origin", "main"], cwd=str(repo_path))
 
                 print(f"✓ Successfully synced {repo_path.name}")
+
+                # Allow pinning a repo to a specific commit for debugging/testing
+                # via CE_DEBUG_PIN_<REPO>_COMMIT env var (e.g. CE_DEBUG_PIN_INFRA_COMMIT)
+                repo_name = repo_path.name.upper().replace("-", "_")
+                pin_commit = os.environ.get(f"CE_DEBUG_PIN_{repo_name}_COMMIT")
+                if pin_commit:
+                    self._run_git_command(
+                        ["git", "reset", "--hard", pin_commit], cwd=str(repo_path)
+                    )
+                    logger.warning(f"Debug: pinned {repo_path.name} to {pin_commit}")
 
             except Exception as e:
                 # If syncing fails, log warning but continue
