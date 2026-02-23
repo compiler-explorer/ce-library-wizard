@@ -67,7 +67,9 @@ def process_cpp_library(
 
             # Generate C++ properties
             click.echo("Generating C++ properties...")
-            if not cpp_handler.generate_properties(library_id, config.version):
+            if not cpp_handler.generate_properties(
+                library_id, config.version, str(config.github_url) if config.github_url else None
+            ):
                 click.echo("❌ Failed to generate C++ properties", err=True)
                 return
 
@@ -414,7 +416,9 @@ def process_c_library(
 
             # Generate C properties
             click.echo("Generating C properties...")
-            if not c_handler.generate_properties(library_id, config.version):
+            if not c_handler.generate_properties(
+                library_id, config.version, str(config.github_url) if config.github_url else None
+            ):
                 click.echo("❌ Failed to generate C properties", err=True)
                 return
 

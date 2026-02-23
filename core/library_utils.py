@@ -274,7 +274,13 @@ def detect_library_type_from_analysis(
             logger.info("Using existing configuration: library is header-only (build_type: none)")
             return True, LibraryType.HEADER_ONLY.value
 
-        # Check legacy type field
+        # Check lib_type field (used by tarballs/make-based libraries like ICU)
+        explicit_lib_type = existing_config.get("lib_type")
+        if explicit_lib_type in ("header-only", "packaged-headers", "static", "shared", "cshared"):
+            logger.info(f"Using existing configuration: library is {explicit_lib_type} (lib_type)")
+            return True, explicit_lib_type
+
+        # Check type field (used by github-based libraries)
         lib_type = existing_config.get("type")
         if lib_type == "header-only":
             logger.info("Using existing configuration: library is header-only")
@@ -429,3 +435,81 @@ def build_ce_install_command(
             )
 
     return subcommand
+
+
+def supplement_properties_from_yaml(
+    props_file: Path,
+    library_id: str,
+    github_url: str | None,
+    infra_path: Path,
+) -> bool:
+    """
+    Supplement a properties file with fields from libraries.yaml that
+    ce_install generate-linux-props doesn't produce (e.g. for tarballs/make-based libs).
+
+    Args:
+        props_file: Path to the properties file to supplement
+        library_id: The library identifier
+        github_url: GitHub URL of the library
+        infra_path: Path to the infra repository
+
+    Returns:
+        True if properties were supplemented, False otherwise
+    """
+    from .models import check_existing_library_config
+
+    if not props_file.exists():
+        return False
+
+    yaml_config = check_existing_library_config(github_url or "", library_id, infra_path)
+    if not yaml_config:
+        return False
+
+    content = props_file.read_text(encoding="utf-8")
+    prefix = f"libs.{library_id}."
+
+    # Only supplement if the library entry exists in the properties
+    if prefix not in content:
+        return False
+
+    additions = []
+
+    # Supplement url if missing
+    if f"{prefix}url=" not in content and github_url:
+        additions.append(f"{prefix}url={github_url}")
+
+    # Supplement sharedliblink if missing
+    if f"{prefix}sharedliblink=" not in content:
+        shared_libs = yaml_config.get("sharedliblink")
+        if shared_libs and isinstance(shared_libs, list):
+            additions.append(f"{prefix}sharedliblink={':'.join(shared_libs)}")
+
+    # Supplement staticliblink if missing
+    if f"{prefix}staticliblink=" not in content:
+        static_libs = yaml_config.get("staticliblink")
+        if static_libs and isinstance(static_libs, list):
+            additions.append(f"{prefix}staticliblink={':'.join(static_libs)}")
+
+    # Supplement packagedheaders if missing
+    if f"{prefix}packagedheaders=" not in content:
+        if yaml_config.get("package_install"):
+            additions.append(f"{prefix}packagedheaders=true")
+
+    if not additions:
+        return False
+
+    # Insert additions after the last existing property line for this library
+    lines = content.split("\n")
+    last_lib_line_idx = -1
+    for i, line in enumerate(lines):
+        if line.startswith(prefix):
+            last_lib_line_idx = i
+
+    if last_lib_line_idx >= 0:
+        for addition in reversed(additions):
+            lines.insert(last_lib_line_idx + 1, addition)
+        props_file.write_text("\n".join(lines), encoding="utf-8")
+        logger.info(f"Supplemented {len(additions)} properties for {library_id}")
+        return True
+
+    return False

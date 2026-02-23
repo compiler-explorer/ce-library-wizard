@@ -12,6 +12,7 @@ from .library_utils import (
     detect_library_type_from_analysis,
     get_link_targets_from_analysis,
     suggest_library_id_from_github_url,
+    supplement_properties_from_yaml,
 )
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
@@ -128,9 +129,9 @@ class CHandler:
             import re
 
             patterns = [
-                r"Added version .+ to library (\\S+)",
+                r"Added version .+ to library (\S+)",
                 r"Library '([^']+)' is now available",
-                r"--library (\\S+)",
+                r"--library (\S+)",
                 r"Found existing library '([^']+)'",
             ]
 
@@ -152,7 +153,9 @@ class CHandler:
             logger.error(f"Error adding C library: {e}")
             return None
 
-    def generate_properties(self, library_id: str, version: str) -> bool:
+    def generate_properties(
+        self, library_id: str, version: str, github_url: str | None = None
+    ) -> bool:
         """
         Generate properties for both C++ and C properties files.
         C shared libraries with lib_type: cshared should be available to both C and C++ compilers.
@@ -160,6 +163,7 @@ class CHandler:
         Args:
             library_id: The library identifier
             version: The library version
+            github_url: GitHub URL of the library (for supplementing properties)
 
         Returns:
             True if successful, False otherwise
@@ -192,6 +196,9 @@ class CHandler:
 
             logger.info("Successfully generated Linux C++ properties")
 
+            # Supplement C++ properties with fields from libraries.yaml
+            supplement_properties_from_yaml(cpp_props_file, library_id, github_url, self.infra_path)
+
             # Generate C properties
             c_props_file = self.main_path / "etc" / "config" / "c.amazon.properties"
             subcommand_c = [
@@ -214,6 +221,9 @@ class CHandler:
                 return False
 
             logger.info("Successfully generated Linux C properties")
+
+            # Supplement C properties with fields from libraries.yaml
+            supplement_properties_from_yaml(c_props_file, library_id, github_url, self.infra_path)
 
             # Also generate Windows properties
             subcommand_windows = ["cpp-library", "generate-windows-props"]

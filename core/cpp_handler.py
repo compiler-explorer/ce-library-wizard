@@ -13,6 +13,7 @@ from .library_utils import (
     detect_library_type_from_analysis,
     get_link_targets_from_analysis,
     suggest_library_id_from_github_url,
+    supplement_properties_from_yaml,
 )
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
@@ -135,6 +136,34 @@ class CppHandler:
             if subcommand is None:
                 library_type_value = config.library_type.value if config.library_type else None
                 if not library_type_value:
+                    # Try to detect from existing libraries.yaml config
+                    existing = check_existing_library_config(
+                        str(config.github_url), config.library_id, self.infra_path
+                    )
+                    if existing:
+                        # Check lib_type first (tarballs/make-based), then type
+                        detected = existing.get("lib_type") or existing.get("type")
+                        if detected in (
+                            "header-only",
+                            "packaged-headers",
+                            "static",
+                            "shared",
+                            "cshared",
+                        ):
+                            library_type_value = detected
+                            logger.info(
+                                f"Auto-detected library type from existing config: {detected}"
+                            )
+                        elif existing.get("type") == "github" and existing.get("build_type") in (
+                            None,
+                            "none",
+                        ):
+                            library_type_value = "header-only"
+                            logger.info(
+                                "Auto-detected library type: header-only "
+                                "(type: github, no build_type)"
+                            )
+                if not library_type_value:
                     logger.warning("No library type specified for cpp-library add command")
                 subcommand = build_ce_install_command(config, library_type_value, None, {})
 
@@ -198,13 +227,16 @@ class CppHandler:
             logger.error(f"Error adding C++ library: {e}")
             return None
 
-    def generate_properties(self, library_id: str, version: str) -> bool:
+    def generate_properties(
+        self, library_id: str, version: str, github_url: str | None = None
+    ) -> bool:
         """
         Generate C++ properties file from libraries.yaml.
 
         Args:
             library_id: The library identifier
             version: The library version
+            github_url: GitHub URL of the library (for supplementing properties)
 
         Returns:
             True if successful, False otherwise
@@ -236,6 +268,9 @@ class CppHandler:
                 return False
 
             logger.info("Successfully generated Linux C++ properties")
+
+            # Supplement properties with fields from libraries.yaml
+            supplement_properties_from_yaml(props_file, library_id, github_url, self.infra_path)
 
             # Also generate Windows properties
             subcommand_windows = ["cpp-library", "generate-windows-props"]
