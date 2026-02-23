@@ -78,7 +78,7 @@ C++ support includes automatic library type detection and comprehensive property
 ### Installation Testing
 The `--install-test` flag validates that the library can be installed:
 ```bash
-./run.sh --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1 --install-test
+./run.sh --lang=c++ --lib=https://github.com/fmtlib/fmt --ver=10.2.1 --install-test
 ```
 
 Requirements:
@@ -88,13 +88,13 @@ Requirements:
 ### Examples
 ```bash
 # Basic addition
-./run.sh --lang=cpp --lib=https://github.com/nlohmann/json --ver=3.11.3
+./run.sh --lang=c++ --lib=https://github.com/nlohmann/json --ver=3.11.3
 
 # Multiple versions
-./run.sh --lang=cpp --lib=https://github.com/nlohmann/json --ver=3.11.1,3.11.2,3.11.3
+./run.sh --lang=c++ --lib=https://github.com/nlohmann/json --ver=3.11.1,3.11.2,3.11.3
 
 # With installation test
-./run.sh --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1 --install-test
+./run.sh --lang=c++ --lib=https://github.com/fmtlib/fmt --ver=10.2.1 --install-test
 ```
 
 ## Fortran Libraries

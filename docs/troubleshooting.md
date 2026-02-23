@@ -70,7 +70,7 @@ brew install gh
 2. **Skip installation test**
    ```bash
    # Run without --install-test flag
-   ./run.sh --lang=cpp --lib=https://github.com/example/lib --ver=1.0.0
+   ./run.sh --lang=c++ --lib=https://github.com/example/lib --ver=1.0.0
    ```
 
 3. **Check library configuration**
@@ -90,7 +90,7 @@ brew install gh
 **Example:**
 ```bash
 # If the repo has v1.2.3 as a tag/release, use:
-./run.sh --lang=cpp --lib=https://github.com/owner/repo --ver=1.2.3
+./run.sh --lang=c++ --lib=https://github.com/owner/repo --ver=1.2.3
 
 # The tool will automatically detect the 'v' prefix requirement
 ```

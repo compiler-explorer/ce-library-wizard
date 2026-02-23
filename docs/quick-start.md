@@ -36,7 +36,7 @@ Skip the interactive prompts by providing all options:
 
 **C++ library:**
 ```bash
-./run.sh --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
+./run.sh --lang=c++ --lib=https://github.com/fmtlib/fmt --ver=10.2.1
 ```
 
 **Fortran library:**
@@ -68,17 +68,17 @@ See what will be modified before committing:
 ### Debug Mode
 Get detailed output for troubleshooting:
 ```bash
-./run.sh --debug --lang=cpp --lib=https://github.com/nlohmann/json --ver=3.11.3
+./run.sh --debug --lang=c++ --lib=https://github.com/nlohmann/json --ver=3.11.3
 ```
 
 ### Specify Library Type (C/C++ only)
 Skip automatic detection and specify the library type directly:
 ```bash
 # Header-only library
-./run.sh --lang=cpp --lib=https://github.com/bobluppes/graaf --ver=v1.1.1 --type=header-only
+./run.sh --lang=c++ --lib=https://github.com/bobluppes/graaf --ver=v1.1.1 --type=header-only
 
 # Packaged headers library  
-./run.sh --lang=cpp --lib=https://github.com/eigen/eigen --ver=3.4.0 --type=packaged-headers
+./run.sh --lang=c++ --lib=https://github.com/eigen/eigen --ver=3.4.0 --type=packaged-headers
 
 # Shared library (requires compilation)
 ./run.sh --lang=c --lib=https://github.com/curl/curl --ver=8.5.0 --type=cshared
@@ -90,16 +90,16 @@ Valid types: `header-only`, `packaged-headers`, `static`, `shared`, `cshared`
 For libraries that require CMake configuration of headers:
 ```bash
 # Manual flag for static/shared libraries that need CMake package installation
-./run.sh --lang=cpp --lib=https://github.com/microsoft/vcpkg --ver=2024.01.12 --type=static --package-install
+./run.sh --lang=c++ --lib=https://github.com/microsoft/vcpkg --ver=2024.01.12 --type=static --package-install
 
 # Note: packaged-headers libraries automatically use package installation
-./run.sh --lang=cpp --lib=https://github.com/eigen/eigen --ver=3.4.0 --type=packaged-headers
+./run.sh --lang=c++ --lib=https://github.com/eigen/eigen --ver=3.4.0 --type=packaged-headers
 ```
 
 ### Test Installation (C/C++ only)
 Validate that the library installs correctly:
 ```bash
-./run.sh --install-test --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
+./run.sh --install-test --lang=c++ --lib=https://github.com/fmtlib/fmt --ver=10.2.1
 ```
 
 ### Test Build (C/C++/Rust/Fortran)
@@ -108,7 +108,7 @@ Requires a compiler installed via `ce_install`:
 
 **C/C++ libraries** (requires gcc or clang):
 ```bash
-./run.sh --build-test=yes --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+./run.sh --build-test=yes --lang=c++ --lib=https://github.com/madler/zlib --ver=1.3.1
 ```
 
 **Rust crates** (requires Rust compiler):

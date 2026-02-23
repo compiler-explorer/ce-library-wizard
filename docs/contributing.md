@@ -101,7 +101,7 @@ Test manually with different scenarios:
 ./run.sh --debug --verify --lang=rust --lib=test-crate --ver=0.1.0
 
 # Test error handling
-./run.sh --lang=cpp --lib=invalid-url --ver=1.0.0
+./run.sh --lang=c++ --lib=invalid-url --ver=1.0.0
 ```
 
 ### 4. Update Documentation

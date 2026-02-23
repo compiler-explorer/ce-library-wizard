@@ -14,7 +14,7 @@ Process multiple libraries using shell scripting:
 libraries=(
     "rust:serde:1.0.195"
     "rust:tokio:1.35.1"
-    "cpp:https://github.com/fmtlib/fmt:10.2.1"
+    "c++:https://github.com/fmtlib/fmt:10.2.1"
 )
 
 for lib in "${libraries[@]}"; do
@@ -38,7 +38,7 @@ on:
       language:
         required: true
         type: choice
-        options: [rust, cpp, c, fortran]
+        options: [rust, c++, c, fortran]
       library:
         required: true
       version:
@@ -127,13 +127,13 @@ The `--build-test` option tests that libraries requiring compilation actually bu
 
 ```bash
 # Auto mode (default) - runs if compiler available
-./run.sh --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+./run.sh --lang=c++ --lib=https://github.com/madler/zlib --ver=1.3.1
 
 # Force build test
-./run.sh --build-test=yes --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+./run.sh --build-test=yes --lang=c++ --lib=https://github.com/madler/zlib --ver=1.3.1
 
 # Skip build test
-./run.sh --build-test=no --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+./run.sh --build-test=no --lang=c++ --lib=https://github.com/madler/zlib --ver=1.3.1
 ```
 
 1. **What it does:**
@@ -401,7 +401,7 @@ Skip all confirmation prompts with `-y` or `--yes`:
 ./run.sh -y --lang=rust --lib=serde --ver=1.0.219
 
 # Combine with other options for full automation
-./run.sh -y --build-test=no --lang=cpp --lib=https://github.com/fmtlib/fmt --ver=10.2.1
+./run.sh -y --build-test=no --lang=c++ --lib=https://github.com/fmtlib/fmt --ver=10.2.1
 ```
 
 ### Dry Run Mode
@@ -411,7 +411,7 @@ Preview changes without committing or creating PRs:
 ./run.sh --dry-run --lang=rust --lib=serde --ver=1.0.219
 
 # Combine with build test to validate everything
-./run.sh --dry-run --build-test=yes --lang=cpp --lib=https://github.com/madler/zlib --ver=1.3.1
+./run.sh --dry-run --build-test=yes --lang=c++ --lib=https://github.com/madler/zlib --ver=1.3.1
 ```
 
 Dry run mode:
@@ -470,7 +470,7 @@ Understanding library type detection:
 Override automatic detection:
 ```bash
 # Force header-only even if CMakeLists.txt exists
-./run.sh --lang=cpp --lib=URL --ver=VERSION --type=header-only
+./run.sh --lang=c++ --lib=URL --ver=VERSION --type=header-only
 ```
 
 ### Complex Version Patterns
