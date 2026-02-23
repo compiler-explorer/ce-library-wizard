@@ -124,9 +124,17 @@ def get_cmake_targets_from_path(clone_path: Path, build_path: Path) -> list[str]
         List of library target names, or None on error
     """
     try:
-        # Configure CMake
+        # Configure CMake with Debug build type to match ce_install
         result = run_command(
-            ["cmake", "-B", str(build_path), "-S", str(clone_path)], clean_env=False
+            [
+                "cmake",
+                "-B",
+                str(build_path),
+                "-S",
+                str(clone_path),
+                "-DCMAKE_BUILD_TYPE=Debug",
+            ],
+            clean_env=False,
         )
 
         if result.returncode != 0:
