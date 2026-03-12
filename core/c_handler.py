@@ -103,9 +103,10 @@ class CHandler:
                 link_targets = get_link_targets_from_analysis(analysis, "cshared")
 
                 if link_targets:
+                    all_names = link_targets.get("static", []) + link_targets.get("shared", [])
                     logger.info(
-                        f"Detected {len(link_targets)} CMake targets: {', '.join(link_targets[:5])}"
-                        + (f" and {len(link_targets)-5} more" if len(link_targets) > 5 else "")
+                        f"Detected {len(all_names)} link targets: {', '.join(all_names[:5])}"
+                        + (f" and {len(all_names)-5} more" if len(all_names) > 5 else "")
                     )
                 else:
                     logger.warning("No suitable CMake targets found for linking")
@@ -114,7 +115,13 @@ class CHandler:
 
             # Check ce_install link support and build command
             link_support = check_ce_install_link_support(self.infra_path)
-            subcommand = build_ce_install_command(config, "cshared", link_targets, link_support)
+            subcommand = build_ce_install_command(
+                config,
+                "cshared",
+                link_targets,
+                link_support,
+                check_file=analysis.get("check_file") if success else config.check_file,
+            )
 
             result = run_ce_install_command(subcommand, cwd=self.infra_path, debug=self.debug)
 

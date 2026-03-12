@@ -19,7 +19,6 @@ from .constants import GO_PROPERTIES_PATH, LIBRARIES_YAML_PATH, MAIN_REPO_PATH_R
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
-from .library_utils import update_properties_libs_line
 from .models import LibraryConfig
 
 logger = logging.getLogger(__name__)
@@ -466,9 +465,7 @@ class GoHandler:
                     else:
                         logger.info(f"Version {version_key} already exists in properties")
             else:
-                # New library - update libs= line and add properties
-                content = update_properties_libs_line(content, library_id)
-
+                # New library - add properties
                 # Find insertion point - append at end of file
                 # Look for tools section delimiter
                 tools_section_match = re.search(

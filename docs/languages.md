@@ -110,8 +110,7 @@ Fortran support is designed for FPM (Fortran Package Manager) packages.
 1. **Validation**: Clones repository and verifies `fpm.toml` exists
 2. **Library Addition**: Uses `ce_install fortran-library add`
 3. **Property Updates**:
-   - Adds library to `libs=` line in properties
-   - Creates library-specific property entries
+   - Creates library-specific property entries (CE auto-discovers libraries from `libs.<id>.*` keys)
 
 ### Examples
 ```bash
@@ -124,8 +123,6 @@ Fortran support is designed for FPM (Fortran Package Manager) packages.
 
 ### Property File Format
 ```properties
-libs=json-fortran:roots-fortran
-
 libs.json-fortran.url=https://github.com/jacobwilliams/json-fortran
 libs.json-fortran.versions=8.5.0:8.4.0
 ```
@@ -143,8 +140,7 @@ Go support handles Go modules that are built using the `gomod` build type. Libra
 ### Process
 1. **Library Addition**: Adds the module to `libraries.yaml` with `build_type: gomod`
 2. **Property Updates**:
-   - Adds library to `libs=` line in `go.amazon.properties`
-   - Creates library-specific property entries with `lookupname`, `packagedheaders=true`
+   - Creates library-specific property entries with `lookupname`, `packagedheaders=true` (CE auto-discovers libraries from `libs.<id>.*` keys)
 
 ### Import Path Override
 Some Go modules have a non-importable root package (e.g., `google.golang.org/protobuf`). In these cases, the wizard:

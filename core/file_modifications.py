@@ -42,10 +42,10 @@ def update_rust_properties(repo_path: Path, new_props_content: str):
     # Read the existing file
     current_content = rust_props_path.read_text()
 
-    # Find the libs= section
-    libs_match = re.search(r"^libs=", current_content, re.MULTILINE)
+    # Find the libs section (libs= header or first libs.* property)
+    libs_match = re.search(r"^libs[.=]", current_content, re.MULTILINE)
     if not libs_match:
-        raise ValueError("Could not find 'libs=' line in rust.amazon.properties")
+        raise ValueError("Could not find libs section in rust.amazon.properties")
 
     libs_start = libs_match.start()
 
@@ -54,7 +54,7 @@ def update_rust_properties(repo_path: Path, new_props_content: str):
     delimiter_pattern = re.compile(r"^#################################", re.MULTILINE)
     tools_pattern = re.compile(r"^tools=", re.MULTILINE)
 
-    # Search for delimiter after libs=
+    # Search for delimiter after libs section start
     delimiter_match = delimiter_pattern.search(current_content, libs_start)
     tools_match = tools_pattern.search(current_content, libs_start)
 
@@ -76,7 +76,7 @@ def update_rust_properties(repo_path: Path, new_props_content: str):
 
     new_content = (
         current_content[:libs_start]
-        + new_props_content  # Everything before libs=
+        + new_props_content  # New libs content
         + current_content[libs_end:]  # New libs content  # Everything after libs section
     )
 

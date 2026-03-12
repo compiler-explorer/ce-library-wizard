@@ -15,10 +15,7 @@ from .constants import FORTRAN_PROPERTIES_PATH, GITHUB_URL_REQUIRED, MAIN_REPO_P
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
-from .library_utils import (
-    suggest_library_id_from_github_url,
-    update_properties_libs_line,
-)
+from .library_utils import suggest_library_id_from_github_url
 from .models import LibraryConfig
 from .subprocess_utils import run_ce_install_command, run_command
 
@@ -150,8 +147,6 @@ class FortranHandler:
             library_props.append(
                 f"libs.{library_id}.versions.{version_key}.version={config.version}"
             )
-
-            content = update_properties_libs_line(content, library_id)
 
             # Find insertion point before tools section
             tools_section_match = re.search(

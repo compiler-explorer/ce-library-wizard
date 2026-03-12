@@ -155,6 +155,12 @@ def process_cpp_library(
                                         f"   Build directory: {build_result.staging_dir}",
                                         err=True,
                                     )
+                                click.echo(
+                                    "   💡 Hint: If this library produces both static and"
+                                    " shared artifacts, try --type=static or --type=shared"
+                                    " to select the correct one.",
+                                    err=True,
+                                )
                                 click.echo("Aborting.", err=True)
                                 return
 
@@ -512,6 +518,12 @@ def process_c_library(
                                         f"   Build directory: {build_result.staging_dir}",
                                         err=True,
                                     )
+                                click.echo(
+                                    "   💡 Hint: If this library produces both static and"
+                                    " shared artifacts, try --type=static or --type=shared"
+                                    " to select the correct one.",
+                                    err=True,
+                                )
                                 click.echo("Aborting.", err=True)
                                 return
 
@@ -1272,6 +1284,10 @@ def main(
                     click.echo("Analyzing repository...")
                     clone_success, analysis = clone_and_analyze_repository(lib)
 
+                # Store detected check_file from analysis
+                if analysis and analysis.get("check_file"):
+                    config.check_file = analysis["check_file"]
+
                 # Auto-detect library type if not specified (for C/C++ with GitHub URL)
                 if not type and language in (Language.C, Language.CPP):
                     if analysis is not None and clone_success:
@@ -1279,6 +1295,23 @@ def main(
                         if is_valid and library_type_value:
                             config.library_type = LibraryType(library_type_value)
                             click.echo(f"Auto-detected library type: {config.library_type.value}")
+                            # Inform user if both static and shared artifacts are present
+                            artifacts = analysis.get("library_artifacts", [])
+                            has_static = any(a.endswith(".a") for a in artifacts)
+                            has_shared = any(a.endswith(".so") or ".so." in a for a in artifacts)
+                            if has_static and has_shared:
+                                static_arts = [a for a in artifacts if a.endswith(".a")]
+                                shared_arts = [
+                                    a for a in artifacts if a.endswith(".so") or ".so." in a
+                                ]
+                                click.echo(
+                                    f"  Note: Both static ({', '.join(static_arts)})"
+                                    f" and shared ({', '.join(shared_arts)})"
+                                    f" artifacts detected."
+                                )
+                                click.echo(
+                                    "  Use --type=static or --type=shared" " to choose explicitly."
+                                )
                     if not config.library_type:
                         click.echo("Could not detect library type, defaulting to packaged-headers")
                         config.library_type = LibraryType.PACKAGED_HEADERS

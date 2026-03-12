@@ -57,7 +57,7 @@ class CppHandler:
         Also checks existing library configuration if available.
 
         Returns:
-            Tuple of (is_valid, library_type, cmake_targets)
+            Tuple of (is_valid, library_type, cmake_targets, check_file)
         """
         # First check if library already exists and use its configuration
         existing_config = None
@@ -78,17 +78,17 @@ class CppHandler:
         # Clone and analyze the repository
         success, analysis = clone_and_analyze_repository(github_url)
         if not success:
-            return False, None, None
+            return False, None, None, None
 
         # Determine library type from analysis and existing config
         is_valid, library_type_value = detect_library_type_from_analysis(analysis, existing_config)
         if not is_valid:
-            return False, None, None
+            return False, None, None, None
 
         # Convert string value back to LibraryType enum
         library_type = LibraryType(library_type_value)
 
-        return True, library_type, analysis.get("cmake_targets")
+        return True, library_type, analysis.get("cmake_targets"), analysis.get("check_file")
 
     def add_library(self, config: LibraryConfig) -> str | None:
         """
@@ -116,16 +116,21 @@ class CppHandler:
                     )
 
                     if link_targets:
+                        all_names = link_targets.get("static", []) + link_targets.get("shared", [])
                         logger.info(
-                            f"Detected {len(link_targets)} CMake targets: "
-                            f"{', '.join(link_targets[:5])}"
-                            + (f" and {len(link_targets)-5} more" if len(link_targets) > 5 else "")
+                            f"Detected {len(all_names)} link targets: "
+                            f"{', '.join(all_names[:5])}"
+                            + (f" and {len(all_names)-5} more" if len(all_names) > 5 else "")
                         )
 
                         # Check ce_install link support and build command
                         link_support = check_ce_install_link_support(self.infra_path)
                         subcommand = build_ce_install_command(
-                            config, config.library_type.value, link_targets, link_support
+                            config,
+                            config.library_type.value,
+                            link_targets,
+                            link_support,
+                            check_file=analysis.get("check_file") or config.check_file,
                         )
                     else:
                         logger.warning("No suitable CMake targets found for linking")
@@ -165,7 +170,9 @@ class CppHandler:
                             )
                 if not library_type_value:
                     logger.warning("No library type specified for cpp-library add command")
-                subcommand = build_ce_install_command(config, library_type_value, None, {})
+                subcommand = build_ce_install_command(
+                    config, library_type_value, None, {}, check_file=config.check_file
+                )
 
             logger.info(f"Running command: {' '.join(subcommand)}")
             result = run_ce_install_command(subcommand, cwd=self.infra_path, debug=self.debug)

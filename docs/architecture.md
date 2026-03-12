@@ -95,7 +95,7 @@ Each supported language has its own handler class:
 #### FortranHandler
 - Validates FPM packages (requires fpm.toml)
 - Updates both libraries.yaml and fortran.amazon.properties
-- Manages the libs= line in properties
+- Generates library-specific property entries
 
 ### Authentication Flow
 

@@ -51,7 +51,8 @@ def analyze_repository_structure(clone_path: Path) -> dict:
             'cmake_targets': list[str] | None,
             'main_targets': list[str] | None,
             'library_artifacts': list[str],  # e.g. ["libminiz.a"]
-            'has_generated_headers': bool
+            'has_generated_headers': bool,
+            'check_file': str | None  # e.g. "include/named/named.hpp"
         }
     """
     analysis = {
@@ -60,6 +61,7 @@ def analyze_repository_structure(clone_path: Path) -> dict:
         "main_targets": None,
         "library_artifacts": [],
         "has_generated_headers": False,
+        "check_file": None,
     }
 
     try:
@@ -83,11 +85,46 @@ def analyze_repository_structure(clone_path: Path) -> dict:
                 if analysis["has_generated_headers"]:
                     logger.info("Detected generated headers in build directory")
 
+        # Detect a suitable check_file for verifying successful clone
+        analysis["check_file"] = detect_check_file(clone_path)
+        if analysis["check_file"]:
+            logger.info(f"Detected check_file: {analysis['check_file']}")
+
         return analysis
 
     except Exception as e:
         logger.error(f"Error analyzing repository structure: {e}")
         return analysis
+
+
+def detect_check_file(clone_path: Path) -> str | None:
+    """
+    Detect a suitable check_file from a cloned repository.
+
+    Looks for a header file under include/ first, then falls back to
+    any README variant in the repo root.
+
+    Args:
+        clone_path: Path to the cloned repository
+
+    Returns:
+        Relative path to a suitable check_file, or None
+    """
+    header_exts = (".h", ".hpp", ".hxx", ".hh")
+
+    # Look for header files under include/
+    include_dir = clone_path / "include"
+    if include_dir.is_dir():
+        for header in sorted(include_dir.rglob("*")):
+            if header.is_file() and header.suffix in header_exts:
+                return str(header.relative_to(clone_path))
+
+    # Fall back to any README variant in the repo root
+    for entry in sorted(clone_path.iterdir()):
+        if entry.is_file() and entry.stem.lower() == "readme":
+            return entry.name
+
+    return None
 
 
 def clone_and_analyze_repository(github_url: str) -> tuple[bool, dict]:
@@ -435,43 +472,57 @@ def detect_library_type_from_analysis(
         return True, LibraryType.HEADER_ONLY.value
 
 
-def get_link_targets_from_analysis(analysis: dict, library_type_value: str) -> list[str] | None:
+def get_link_targets_from_analysis(
+    analysis: dict, library_type_value: str
+) -> dict[str, list[str]] | None:
     """
-    Get link targets from repository analysis based on library type.
+    Get link targets from repository analysis, separated by artifact type.
 
     When library_artifacts are available (parsed from cmake link.txt files),
-    derive link names from them (strip lib prefix and .a/.so suffix).
-    Otherwise fall back to cmake main_targets.
+    derive link names from them (strip lib prefix and .a/.so suffix),
+    categorized into 'static' (.a) and 'shared' (.so) buckets.
+    Otherwise fall back to cmake main_targets under the requested type.
 
     Args:
         analysis: Repository analysis results
         library_type_value: Library type value (e.g., 'static', 'shared', 'cshared')
 
     Returns:
-        List of link targets or None if not applicable
+        Dict with 'static' and/or 'shared' keys mapping to link name lists,
+        or None if not applicable
     """
     if library_type_value not in ["static", "shared", "cshared"]:
         return None
 
     artifacts = analysis.get("library_artifacts", [])
     if artifacts:
-        link_names = []
+        static_names = []
+        shared_names = []
         for artifact in artifacts:
             name = artifact
-            # Strip lib prefix
             if name.startswith("lib"):
                 name = name[3:]
-            # Strip suffix (.a or .so / .so.*)
             if name.endswith(".a"):
-                name = name[:-2]
+                link_name = name[:-2]
+                if link_name and link_name not in static_names:
+                    static_names.append(link_name)
             elif ".so" in name:
-                name = name[: name.index(".so")]
-            if name and name not in link_names:
-                link_names.append(name)
-        return link_names if link_names else None
+                link_name = name[: name.index(".so")]
+                if link_name and link_name not in shared_names:
+                    shared_names.append(link_name)
+
+        result = {}
+        if static_names:
+            result["static"] = static_names
+        if shared_names:
+            result["shared"] = shared_names
+        return result if result else None
 
     if analysis.get("main_targets"):
-        return analysis["main_targets"]
+        if library_type_value == "static":
+            return {"static": analysis["main_targets"]}
+        else:
+            return {"shared": analysis["main_targets"]}
     return None
 
 
@@ -499,33 +550,12 @@ def check_ce_install_link_support(infra_path: Path) -> dict[str, bool]:
         return {"static_lib_link": False, "shared_lib_link": False}
 
 
-def update_properties_libs_line(content: str, library_id: str) -> str:
-    """
-    Update the libs= line in a properties file to include a new library.
-
-    Args:
-        content: The properties file content
-        library_id: The library ID to add
-
-    Returns:
-        Updated content with the library added to libs= line
-    """
-    libs_match = re.search(r"^libs=(.*)$", content, re.MULTILINE)
-    if libs_match:
-        current_libs = libs_match.group(1)
-        # Add new library to the list if not already there
-        if library_id not in current_libs:
-            new_libs_line = f"libs={current_libs}:{library_id}"
-            content = content.replace(libs_match.group(0), new_libs_line)
-
-    return content
-
-
 def build_ce_install_command(
     config,
     library_type_value: str | None,
-    link_targets: list[str] | None,
+    link_targets: dict[str, list[str]] | None,
     link_support: dict[str, bool],
+    check_file: str | None = None,
 ) -> list[str]:
     """
     Build the ce_install command with appropriate parameters.
@@ -533,8 +563,9 @@ def build_ce_install_command(
     Args:
         config: Library configuration object
         library_type_value: Library type value (can be None)
-        link_targets: List of link targets if available
+        link_targets: Dict with 'static' and/or 'shared' keys mapping to link names
         link_support: Dict indicating which link parameters are supported
+        check_file: File path to verify successful clone (e.g. "include/foo.h")
 
     Returns:
         List of command arguments
@@ -557,23 +588,27 @@ def build_ce_install_command(
         subcommand.append("--package-install")
         logger.info("Adding --package-install flag for CMake header configuration")
 
-    # Add link targets if supported and available
-    if link_targets:
-        link_targets_str = ",".join(link_targets)
+    # Add check_file if specified
+    if check_file:
+        subcommand.extend(["--check-file", check_file])
+        logger.info(f"Adding check file: {check_file}")
 
-        if library_type_value == "static" and link_support.get("static_lib_link"):
-            subcommand.extend(["--static-lib-link", link_targets_str])
-            logger.info("Adding static library link targets to command")
-        elif library_type_value in ["shared", "cshared"] and link_support.get("shared_lib_link"):
-            subcommand.extend(["--shared-lib-link", link_targets_str])
-            logger.info("Adding shared library link targets to command")
-        elif link_targets:
-            logger.info(
-                f"Note: CMake targets detected but ce_install doesn't support "
-                f"automatic link target configuration yet. You may need to manually "
-                f"configure link targets: {', '.join(link_targets[:3])}"
-                + (f" and {len(link_targets)-3} more" if len(link_targets) > 3 else "")
-            )
+    # Add link targets if supported and available
+    # ce_install restricts which flags can be used with each type:
+    #   --static-lib-link: only with --type static
+    #   --shared-lib-link: only with --type shared or cshared
+    if link_targets:
+        static_links = link_targets.get("static", [])
+        shared_links = link_targets.get("shared", [])
+
+        if static_links and library_type_value == "static":
+            if link_support.get("static_lib_link"):
+                subcommand.extend(["--static-lib-link", ",".join(static_links)])
+                logger.info(f"Adding static library link targets: {', '.join(static_links)}")
+        if shared_links and library_type_value in ("shared", "cshared"):
+            if link_support.get("shared_lib_link"):
+                subcommand.extend(["--shared-lib-link", ",".join(shared_links)])
+                logger.info(f"Adding shared library link targets: {', '.join(shared_links)}")
 
     return subcommand
 

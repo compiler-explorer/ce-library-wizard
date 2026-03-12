@@ -265,6 +265,7 @@ class LibraryConfig(BaseModel):
     package_install: bool | None = None  # Whether CMake package installation is needed
     module: str | None = None  # Go module path (e.g., github.com/google/uuid)
     import_path: str | None = None  # Go import path override (when root package isn't importable)
+    check_file: str | None = None  # File to verify successful clone (e.g. "include/foo.h")
 
     @field_validator("version")
     @classmethod

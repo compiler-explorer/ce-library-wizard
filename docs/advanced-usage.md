@@ -298,8 +298,6 @@ find /tmp/ce-cefs-temp/staging/ -name "*.f90" -o -name "*.F90"
 
 **C++ Properties (`c++.amazon.properties`):**
 ```properties
-libs=fmt:nlohmann_json:boost
-
 libs.fmt.versions=10.2.1:10.2.0:10.1.1
 libs.fmt.url.10.2.1=https://github.com/fmtlib/fmt/archive/refs/tags/10.2.1.tar.gz
 libs.fmt.path.10.2.1=/opt/compiler-explorer/libs/fmt/10.2.1
@@ -307,8 +305,6 @@ libs.fmt.path.10.2.1=/opt/compiler-explorer/libs/fmt/10.2.1
 
 **Rust Properties (`rust.amazon.properties`):**
 ```properties
-libs=serde:tokio:async-trait
-
 libs.serde.versions=1.0.195:1.0.194
 libs.serde.crate=serde
 libs.serde.dependencies=serde_derive
@@ -316,28 +312,11 @@ libs.serde.dependencies=serde_derive
 
 **Fortran Properties (`fortran.amazon.properties`):**
 ```properties
-libs=json-fortran:roots-fortran
-
 libs.json-fortran.url=https://github.com/jacobwilliams/json-fortran
 libs.json-fortran.versions=8.5.0:8.4.0
 ```
 
-### Manual Property Updates
-Sometimes you need manual control:
-
-```python
-# Custom property generation
-from pathlib import Path
-
-props_file = Path("c++.amazon.properties")
-content = props_file.read_text()
-
-# Add new library to libs line
-if "libs=" in content:
-    content = content.replace("libs=", "libs=mynewlib:", 1)
-
-props_file.write_text(content)
-```
+Note: CE auto-discovers libraries from `libs.<id>.*` property keys, so no `libs=` header line is needed.
 
 ## Debugging Techniques
 

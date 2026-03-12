@@ -170,7 +170,7 @@ def ask_library_questions() -> LibraryConfig:
 
         print("\nAnalyzing repository to detect library type...")
         cpp_handler = CppHandler(Path.home(), setup_ce_install=False, debug=False)
-        is_valid, detected_type, cmake_targets = cpp_handler.detect_library_type(
+        is_valid, detected_type, cmake_targets, check_file = cpp_handler.detect_library_type(
             github_answer["github_url"], library_id_answer["library_id"]
         )
 
@@ -208,6 +208,8 @@ def ask_library_questions() -> LibraryConfig:
         ]
         library_type_answer = inquirer.prompt(library_type_question)
         config_data["library_type"] = LibraryType(library_type_answer["library_type"])
+        if check_file:
+            config_data["check_file"] = check_file
 
         # Set package installation based on library type
         selected_type = LibraryType(library_type_answer["library_type"])
