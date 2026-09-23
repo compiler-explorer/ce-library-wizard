@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from .build_tester import BuildTestResult, check_build_test_available, run_build_test
+from .library_paths import (
+    CMAKE_NOT_HEADER_ONLY_NOTE,
+    apply_include_path,
+    validate_version_paths,
+)
 from .library_utils import (
     build_ce_install_command,
     check_ce_install_link_support,
@@ -161,7 +167,11 @@ class CHandler:
             return None
 
     def generate_properties(
-        self, library_id: str, version: str, github_url: str | None = None
+        self,
+        library_id: str,
+        version: str,
+        github_url: str | None = None,
+        include_path: str | None = None,
     ) -> bool:
         """
         Generate properties for both C++ and C properties files.
@@ -171,6 +181,8 @@ class CHandler:
             library_id: The library identifier
             version: The library version
             github_url: GitHub URL of the library (for supplementing properties)
+            include_path: Header directory relative to the repository root, replacing
+                the default include/
 
         Returns:
             True if successful, False otherwise
@@ -206,6 +218,9 @@ class CHandler:
             # Supplement C++ properties with fields from libraries.yaml
             supplement_properties_from_yaml(cpp_props_file, library_id, github_url, self.infra_path)
 
+            if include_path:
+                apply_include_path(cpp_props_file, library_id, version, include_path)
+
             # Generate C properties
             c_props_file = self.main_path / "etc" / "config" / "c.amazon.properties"
             subcommand_c = [
@@ -231,6 +246,9 @@ class CHandler:
 
             # Supplement C properties with fields from libraries.yaml
             supplement_properties_from_yaml(c_props_file, library_id, github_url, self.infra_path)
+
+            if include_path:
+                apply_include_path(c_props_file, library_id, version, include_path)
 
             # Also generate Windows properties
             subcommand_windows = ["cpp-library", "generate-windows-props"]
@@ -289,19 +307,21 @@ class CHandler:
         """
         return suggest_library_id_from_github_url(github_url)
 
-    def check_library_paths(self, library_id: str, version: str) -> bool:
+    def check_library_paths(
+        self, library_id: str, version: str, github_url: str | None = None
+    ) -> bool:
         """
         Check library paths using ce_install list-paths without installing.
 
         Args:
             library_id: The library identifier
             version: The library version
+            github_url: GitHub URL of the library, used to verify the include
+                paths exist in the repository at that version
 
         Returns:
             True if paths are consistent with properties, False otherwise
         """
-        import re
-
         try:
             logger.info(f"Checking paths for {library_id} {version}...")
             install_spec = f"{library_id} {version}"
@@ -324,7 +344,7 @@ class CHandler:
             destination_path = None
 
             # Try to parse the list-paths output format
-            list_paths_pattern = r"libraries/c/\\S+\\s+\\S+:\\s+(.+)"
+            list_paths_pattern = r"libraries/c/\S+\s+\S+:\s+(.+)"
             list_match = re.search(list_paths_pattern, output)
 
             if list_match:
@@ -336,12 +356,17 @@ class CHandler:
                 logger.warning("Skipping path consistency check")
                 return True
 
-            # Check if destination path is in both properties files
+            # Check if include paths are valid in both properties files
             if self.main_path:
                 props_files = [
                     self.main_path / "etc" / "config" / "c++.amazon.properties",
                     self.main_path / "etc" / "config" / "c.amazon.properties",
                 ]
+                yaml_config = check_existing_library_config(
+                    github_url or "", library_id, self.infra_path
+                )
+                # Both files carry the same paths, so validating one is enough
+                paths_validated = False
 
                 for props_file in props_files:
                     if props_file.exists():
@@ -356,6 +381,25 @@ class CHandler:
                                 "configuration are out of sync"
                             )
                             return False
+
+                        if not paths_validated:
+                            path_check = validate_version_paths(
+                                props_content,
+                                library_id,
+                                version,
+                                destination_path,
+                                github_url,
+                                yaml_config,
+                            )
+                            if not path_check.ok:
+                                for problem in path_check.problems:
+                                    logger.error(
+                                        f"Invalid include path in {props_file.name}: {problem}"
+                                    )
+                                if path_check.has_cmake:
+                                    logger.error(CMAKE_NOT_HEADER_ONLY_NOTE)
+                                return False
+                            paths_validated = True
                     else:
                         logger.warning(
                             f"Properties file {props_file.name} not found for verification"

@@ -266,6 +266,18 @@ class LibraryConfig(BaseModel):
     module: str | None = None  # Go module path (e.g., github.com/google/uuid)
     import_path: str | None = None  # Go import path override (when root package isn't importable)
     check_file: str | None = None  # File to verify successful clone (e.g. "include/foo.h")
+    include_path: str | None = None  # Header directory relative to repo root ("." for root)
+
+    @field_validator("include_path")
+    @classmethod
+    def validate_include_path(cls, v):
+        """Include path must be a relative path inside the repository"""
+        if v is None:
+            return v
+        v = v.strip().strip("/") or "."
+        if v.startswith("~") or ".." in v.split("/"):
+            raise ValueError("Include path must be relative to the repository root")
+        return v
 
     @field_validator("version")
     @classmethod

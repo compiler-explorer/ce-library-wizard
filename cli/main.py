@@ -26,6 +26,13 @@ from core.ui_utils import (
     display_authentication_warning,
 )
 
+INCLUDE_PATH_HINT = (
+    "   💡 Hint: if the headers are not in the repository's include/ directory, pass "
+    "--include-path <dir> (relative to the repository root, '.' for the root).\n"
+    "   💡 If the headers have to be installed by the build (e.g. with CMake), this is not a "
+    "header-only library: use --type packaged-headers or --package-install instead."
+)
+
 
 def create_single_version_config(config: LibraryConfig, version: str) -> LibraryConfig:
     """Create a new config with a single version from a multi-version config"""
@@ -73,7 +80,10 @@ def process_cpp_library(
             # Generate C++ properties
             click.echo("Generating C++ properties...")
             if not cpp_handler.generate_properties(
-                library_id, config.version, str(config.github_url) if config.github_url else None
+                library_id,
+                config.version,
+                str(config.github_url) if config.github_url else None,
+                config.include_path,
             ):
                 click.echo("❌ Failed to generate C++ properties", err=True)
                 return
@@ -89,13 +99,19 @@ def process_cpp_library(
                     click.echo("\n🧪 Running install test...")
                     if not cpp_handler.run_install_test(library_id, config.version):
                         click.echo("❌ Install test failed. Aborting.", err=True)
+                        click.echo(INCLUDE_PATH_HINT, err=True)
                         return
                     click.echo("✓ Install test passed")
             else:
                 # Just check paths without installing
                 click.echo("\n🔍 Checking library paths...")
-                if not cpp_handler.check_library_paths(library_id, config.version):
+                if not cpp_handler.check_library_paths(
+                    library_id,
+                    config.version,
+                    str(config.github_url) if config.github_url else None,
+                ):
                     click.echo("❌ Path check failed. Aborting.", err=True)
+                    click.echo(INCLUDE_PATH_HINT, err=True)
                     return
                 click.echo("✓ Path check passed")
 
@@ -448,7 +464,10 @@ def process_c_library(
             # Generate C properties
             click.echo("Generating C properties...")
             if not c_handler.generate_properties(
-                library_id, config.version, str(config.github_url) if config.github_url else None
+                library_id,
+                config.version,
+                str(config.github_url) if config.github_url else None,
+                config.include_path,
             ):
                 click.echo("❌ Failed to generate C properties", err=True)
                 return
@@ -457,8 +476,11 @@ def process_c_library(
 
             # Check library paths
             click.echo("\n🔍 Checking library paths...")
-            if not c_handler.check_library_paths(library_id, config.version):
+            if not c_handler.check_library_paths(
+                library_id, config.version, str(config.github_url) if config.github_url else None
+            ):
                 click.echo("❌ Path check failed. Aborting.", err=True)
+                click.echo(INCLUDE_PATH_HINT, err=True)
                 return
             click.echo("✓ Path check passed")
 
@@ -1196,6 +1218,13 @@ def process_go_library(
     "--import-path",
     help="Go import path override (for modules where root package isn't importable)",
 )
+@click.option(
+    "--include-path",
+    help=(
+        "Header directory relative to the repository root, if not include/ "
+        "(use '.' for the root; C/C++ only)"
+    ),
+)
 @click.option("--force", is_flag=True, help="Override cmake target validation warnings/errors")
 def main(
     debug: bool,
@@ -1214,6 +1243,7 @@ def main(
     type: str | None,
     package_install: bool,
     import_path: str | None,
+    include_path: str | None,
     force: bool,
 ):
     """CLI tool to add libraries to Compiler Explorer"""
@@ -1267,7 +1297,9 @@ def main(
                 config.library_id = GoHandler.suggest_library_id_static(lib)
             else:
                 # For non-Rust/Go, lib should be a GitHub URL
-                config = LibraryConfig(language=language, github_url=lib, version=ver)
+                config = LibraryConfig(
+                    language=language, github_url=lib, version=ver, include_path=include_path
+                )
 
                 # For C, C++, and Fortran, we need to set library_id
                 if language == Language.C:

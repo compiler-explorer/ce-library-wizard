@@ -6,6 +6,15 @@ import re
 from pathlib import Path
 
 from .build_tester import BuildTestResult, check_build_test_available, run_build_test
+from .library_paths import (
+    CMAKE_NOT_HEADER_ONLY_NOTE,
+    apply_include_path,
+    find_invalid_installed_paths,
+    get_version_paths,
+    has_cmake_lists,
+    is_path_under,
+    validate_version_paths,
+)
 from .library_utils import (
     build_ce_install_command,
     check_ce_install_link_support,
@@ -235,7 +244,11 @@ class CppHandler:
             return None
 
     def generate_properties(
-        self, library_id: str, version: str, github_url: str | None = None
+        self,
+        library_id: str,
+        version: str,
+        github_url: str | None = None,
+        include_path: str | None = None,
     ) -> bool:
         """
         Generate C++ properties file from libraries.yaml.
@@ -244,6 +257,8 @@ class CppHandler:
             library_id: The library identifier
             version: The library version
             github_url: GitHub URL of the library (for supplementing properties)
+            include_path: Header directory relative to the repository root, replacing
+                the default include/
 
         Returns:
             True if successful, False otherwise
@@ -278,6 +293,9 @@ class CppHandler:
 
             # Supplement properties with fields from libraries.yaml
             supplement_properties_from_yaml(props_file, library_id, github_url, self.infra_path)
+
+            if include_path:
+                apply_include_path(props_file, library_id, version, include_path)
 
             # Also generate Windows properties
             subcommand_windows = ["cpp-library", "generate-windows-props"]
@@ -388,17 +406,27 @@ class CppHandler:
                 props_file = self.main_path / "etc" / "config" / "c++.amazon.properties"
                 if props_file.exists():
                     props_content = props_file.read_text()
-                    # Extract the library path from destination
-                    # (e.g., /opt/compiler-explorer/libs/nlohmann_json/v3.11.3)
-                    # and check if it appears in the properties
-                    if destination_path not in props_content:
+                    # Every include path of this version must be inside the destination
+                    # (e.g., /opt/compiler-explorer/libs/nlohmann_json/v3.11.3/include)
+                    # and must actually exist in the installation
+                    paths = get_version_paths(props_content, library_id, version)
+                    outside = [p for p in paths if not is_path_under(p, destination_path)]
+                    if outside:
                         logger.error(
-                            f"Inconsistency detected: Installation destination "
-                            f"'{destination_path}' not found in properties file"
+                            f"Inconsistency detected: Include path(s) {', '.join(outside)} "
+                            f"not inside installation destination '{destination_path}'"
                         )
                         logger.error(
                             "This suggests the properties file and installation are out of sync"
                         )
+                        return False
+
+                    problems = find_invalid_installed_paths(paths)
+                    if problems:
+                        for problem in problems:
+                            logger.error(f"Invalid include path: {problem}")
+                        if has_cmake_lists(Path(destination_path)):
+                            logger.error(CMAKE_NOT_HEADER_ONLY_NOTE)
                         return False
                 else:
                     logger.warning("Properties file not found for verification")
@@ -410,13 +438,17 @@ class CppHandler:
             logger.error(f"Error during install test: {e}")
             return False
 
-    def check_library_paths(self, library_id: str, version: str) -> bool:
+    def check_library_paths(
+        self, library_id: str, version: str, github_url: str | None = None
+    ) -> bool:
         """
         Check library paths using ce_install list-paths without installing.
 
         Args:
             library_id: The library identifier
             version: The library version
+            github_url: GitHub URL of the library, used to verify the include
+                paths exist in the repository at that version
 
         Returns:
             True if paths are consistent with properties, False otherwise
@@ -470,9 +502,10 @@ class CppHandler:
                 props_file = self.main_path / "etc" / "config" / "c++.amazon.properties"
                 if props_file.exists():
                     props_content = props_file.read_text()
+                    paths = get_version_paths(props_content, library_id, version)
 
-                    # Check for the exact path first
-                    path_found = destination_path in props_content
+                    # Check for paths inside the exact destination first
+                    path_found = any(is_path_under(p, destination_path) for p in paths)
 
                     # If not found, try the version without dots (common in properties files)
                     if not path_found:
@@ -480,7 +513,7 @@ class CppHandler:
                         alternative_path = destination_path.replace(
                             f"/{version}", f"/{version_no_dots}"
                         )
-                        path_found = alternative_path in props_content
+                        path_found = any(is_path_under(p, alternative_path) for p in paths)
                         if path_found:
                             logger.info(f"Found alternative path format: {alternative_path}")
 
@@ -514,6 +547,24 @@ class CppHandler:
                             return False
                     else:
                         logger.info("Path consistency check passed")
+
+                        yaml_config = check_existing_library_config(
+                            github_url or "", library_id, self.infra_path
+                        )
+                        path_check = validate_version_paths(
+                            props_content,
+                            library_id,
+                            version,
+                            destination_path,
+                            github_url,
+                            yaml_config,
+                        )
+                        if not path_check.ok:
+                            for problem in path_check.problems:
+                                logger.error(f"Invalid include path: {problem}")
+                            if path_check.has_cmake:
+                                logger.error(CMAKE_NOT_HEADER_ONLY_NOTE)
+                            return False
                 else:
                     logger.warning("Properties file not found for verification")
 
