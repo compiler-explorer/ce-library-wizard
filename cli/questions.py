@@ -246,9 +246,9 @@ def ask_library_questions() -> LibraryConfig:
                 )
             ]
             include_path_answer = inquirer.prompt(include_path_question)
-            include_path = include_path_answer["include_path"].strip().strip("/") or "."
-            if include_path != "include":
-                config_data["include_path"] = include_path
+            # LibraryConfig normalizes and validates the path
+            if include_path_answer["include_path"] != "include":
+                config_data["include_path"] = include_path_answer["include_path"]
 
     # C/C++ specific questions
     elif language in [Language.C, Language.CPP]:

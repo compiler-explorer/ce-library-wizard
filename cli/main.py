@@ -14,6 +14,7 @@ from core.fortran_handler import FortranHandler
 from core.git_operations import GitManager
 from core.github_auth import get_github_token_via_gh_cli, get_github_token_via_oauth
 from core.go_handler import GoHandler, detect_import_path, resolve_go_module
+from core.library_paths import check_header_layout
 from core.library_utils import (
     clone_and_analyze_repository,
     detect_library_type_from_analysis,
@@ -105,13 +106,8 @@ def process_cpp_library(
             else:
                 # Just check paths without installing
                 click.echo("\n🔍 Checking library paths...")
-                if not cpp_handler.check_library_paths(
-                    library_id,
-                    config.version,
-                    str(config.github_url) if config.github_url else None,
-                ):
+                if not cpp_handler.check_library_paths(library_id, config.version):
                     click.echo("❌ Path check failed. Aborting.", err=True)
-                    click.echo(INCLUDE_PATH_HINT, err=True)
                     return
                 click.echo("✓ Path check passed")
 
@@ -476,11 +472,8 @@ def process_c_library(
 
             # Check library paths
             click.echo("\n🔍 Checking library paths...")
-            if not c_handler.check_library_paths(
-                library_id, config.version, str(config.github_url) if config.github_url else None
-            ):
+            if not c_handler.check_library_paths(library_id, config.version):
                 click.echo("❌ Path check failed. Aborting.", err=True)
-                click.echo(INCLUDE_PATH_HINT, err=True)
                 return
             click.echo("✓ Path check passed")
 
@@ -1389,6 +1382,15 @@ def main(
                 elif package_install:
                     config.package_install = True
                     click.echo("✓ Using CMake package installation")
+
+                # Headers used straight from the repository must be where the properties point
+                if analysis is not None and clone_success and not config.package_install:
+                    layout_errors = check_header_layout(analysis, config.include_path)
+                    if layout_errors:
+                        for error in layout_errors:
+                            click.echo(f"❌ {error}", err=True)
+                        click.echo(INCLUDE_PATH_HINT, err=True)
+                        exit(1)
 
                 config.validate_versions_and_exit_on_missing()
         else:

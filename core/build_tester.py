@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from .library_utils import HEADER_EXTENSIONS
 from .subprocess_utils import run_ce_install_command
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ class BuildTestResult:
             a for a in self.artifacts if a.endswith((".a", ".so", ".so.*", ".rlib")) or ".so." in a
         ]
         rust_meta = [a for a in self.artifacts if a.endswith(".rmeta")]
-        headers = [a for a in self.artifacts if a.endswith((".h", ".hpp", ".hxx", ".hh"))]
+        headers = [a for a in self.artifacts if a.endswith(HEADER_EXTENSIONS)]
         fortran_src = [
             a for a in self.artifacts if a.endswith((".f90", ".F90", ".f", ".F", ".f95", ".F95"))
         ]

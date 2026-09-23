@@ -11,9 +11,7 @@ from .library_paths import (
     apply_include_path,
     find_invalid_installed_paths,
     get_version_paths,
-    has_cmake_lists,
     is_path_under,
-    validate_version_paths,
 )
 from .library_utils import (
     build_ce_install_command,
@@ -425,7 +423,7 @@ class CppHandler:
                     if problems:
                         for problem in problems:
                             logger.error(f"Invalid include path: {problem}")
-                        if has_cmake_lists(Path(destination_path)):
+                        if (Path(destination_path) / "CMakeLists.txt").is_file():
                             logger.error(CMAKE_NOT_HEADER_ONLY_NOTE)
                         return False
                 else:
@@ -438,17 +436,13 @@ class CppHandler:
             logger.error(f"Error during install test: {e}")
             return False
 
-    def check_library_paths(
-        self, library_id: str, version: str, github_url: str | None = None
-    ) -> bool:
+    def check_library_paths(self, library_id: str, version: str) -> bool:
         """
         Check library paths using ce_install list-paths without installing.
 
         Args:
             library_id: The library identifier
             version: The library version
-            github_url: GitHub URL of the library, used to verify the include
-                paths exist in the repository at that version
 
         Returns:
             True if paths are consistent with properties, False otherwise
@@ -547,24 +541,6 @@ class CppHandler:
                             return False
                     else:
                         logger.info("Path consistency check passed")
-
-                        yaml_config = check_existing_library_config(
-                            github_url or "", library_id, self.infra_path
-                        )
-                        path_check = validate_version_paths(
-                            props_content,
-                            library_id,
-                            version,
-                            destination_path,
-                            github_url,
-                            yaml_config,
-                        )
-                        if not path_check.ok:
-                            for problem in path_check.problems:
-                                logger.error(f"Invalid include path: {problem}")
-                            if path_check.has_cmake:
-                                logger.error(CMAKE_NOT_HEADER_ONLY_NOTE)
-                            return False
                 else:
                     logger.warning("Properties file not found for verification")
 

@@ -6,11 +6,7 @@ import re
 from pathlib import Path
 
 from .build_tester import BuildTestResult, check_build_test_available, run_build_test
-from .library_paths import (
-    CMAKE_NOT_HEADER_ONLY_NOTE,
-    apply_include_path,
-    validate_version_paths,
-)
+from .library_paths import apply_include_path, get_version_paths, is_path_under
 from .library_utils import (
     build_ce_install_command,
     check_ce_install_link_support,
@@ -307,17 +303,13 @@ class CHandler:
         """
         return suggest_library_id_from_github_url(github_url)
 
-    def check_library_paths(
-        self, library_id: str, version: str, github_url: str | None = None
-    ) -> bool:
+    def check_library_paths(self, library_id: str, version: str) -> bool:
         """
         Check library paths using ce_install list-paths without installing.
 
         Args:
             library_id: The library identifier
             version: The library version
-            github_url: GitHub URL of the library, used to verify the include
-                paths exist in the repository at that version
 
         Returns:
             True if paths are consistent with properties, False otherwise
@@ -356,50 +348,29 @@ class CHandler:
                 logger.warning("Skipping path consistency check")
                 return True
 
-            # Check if include paths are valid in both properties files
+            # Check the include paths in both properties files are inside the destination
+            # (libraries using packagedheaders have no path property)
             if self.main_path:
                 props_files = [
                     self.main_path / "etc" / "config" / "c++.amazon.properties",
                     self.main_path / "etc" / "config" / "c.amazon.properties",
                 ]
-                yaml_config = check_existing_library_config(
-                    github_url or "", library_id, self.infra_path
-                )
-                # Both files carry the same paths, so validating one is enough
-                paths_validated = False
 
                 for props_file in props_files:
                     if props_file.exists():
                         props_content = props_file.read_text()
-                        if destination_path not in props_content:
+                        paths = get_version_paths(props_content, library_id, version)
+                        outside = [p for p in paths if not is_path_under(p, destination_path)]
+                        if outside:
                             logger.error(
-                                f"Inconsistency detected: Destination path "
-                                f"'{destination_path}' not found in {props_file.name}"
+                                f"Inconsistency detected: Include path(s) {', '.join(outside)} "
+                                f"not inside destination '{destination_path}' in {props_file.name}"
                             )
                             logger.error(
                                 "This suggests the properties file and library "
                                 "configuration are out of sync"
                             )
                             return False
-
-                        if not paths_validated:
-                            path_check = validate_version_paths(
-                                props_content,
-                                library_id,
-                                version,
-                                destination_path,
-                                github_url,
-                                yaml_config,
-                            )
-                            if not path_check.ok:
-                                for problem in path_check.problems:
-                                    logger.error(
-                                        f"Invalid include path in {props_file.name}: {problem}"
-                                    )
-                                if path_check.has_cmake:
-                                    logger.error(CMAKE_NOT_HEADER_ONLY_NOTE)
-                                return False
-                            paths_validated = True
                     else:
                         logger.warning(
                             f"Properties file {props_file.name} not found for verification"

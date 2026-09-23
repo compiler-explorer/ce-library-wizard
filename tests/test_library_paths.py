@@ -4,15 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from core.library_paths import (
+    CMAKE_NOT_HEADER_ONLY_NOTE,
+    check_header_layout,
     find_invalid_installed_paths,
-    find_invalid_repo_paths,
-    find_paths_outside_destination,
     get_version_paths,
-    has_cmake_lists,
     is_path_under,
     override_include_path,
-    validate_version_paths,
 )
+from core.library_utils import analyze_repository_structure
 from core.models import Language, LibraryConfig
 
 PROPS = """
@@ -50,10 +49,6 @@ def test_is_path_under_requires_component_boundary():
     assert not is_path_under(f"{DEST}0/include", DEST)
 
 
-def test_find_paths_outside_destination():
-    assert find_paths_outside_destination([f"{DEST}/include", "/other"], DEST) == ["/other"]
-
-
 def _make_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     (repo / "bit_factory").mkdir(parents=True)
@@ -61,21 +56,6 @@ def _make_repo(tmp_path: Path) -> Path:
     (repo / "docs").mkdir()
     (repo / "docs" / "index.md").write_text("")
     return repo
-
-
-def test_find_invalid_repo_paths_missing_include_dir(tmp_path):
-    repo = _make_repo(tmp_path)
-    problems = find_invalid_repo_paths([f"{DEST}/include"], DEST, repo)
-    assert len(problems) == 1
-    assert "has no include/" in problems[0]
-
-
-def test_find_invalid_repo_paths_root_and_headerless(tmp_path):
-    repo = _make_repo(tmp_path)
-    assert find_invalid_repo_paths([DEST], DEST, repo) == []
-    problems = find_invalid_repo_paths([f"{DEST}/docs"], DEST, repo)
-    assert len(problems) == 1
-    assert "no header files" in problems[0]
 
 
 def test_find_invalid_installed_paths(tmp_path):
@@ -87,25 +67,6 @@ def test_find_invalid_installed_paths(tmp_path):
     assert find_invalid_installed_paths([str(repo / "docs")]) == [
         f"'{repo / 'docs'}' contains no header files"
     ]
-
-
-def test_has_cmake_lists(tmp_path):
-    repo = _make_repo(tmp_path)
-    assert not has_cmake_lists(repo)
-    (repo / "CMakeLists.txt").write_text("")
-    assert has_cmake_lists(repo)
-
-
-def test_validate_version_paths_rejects_outside_destination():
-    result = validate_version_paths(PROPS, "anyxx", "0.7.0", "/opt/compiler-explorer/libs/x/1")
-    assert not result.ok
-    assert len(result.problems) == 1
-    assert "not inside install destination" in result.problems[0]
-
-
-def test_validate_version_paths_skips_repo_check_for_non_github():
-    result = validate_version_paths(PROPS, "anyxx", "0.7.0", DEST, "https://x", {"type": "s3"})
-    assert result.ok
 
 
 def test_override_include_path_to_root():
@@ -141,3 +102,21 @@ def test_include_path_config_validation():
             version="1",
             include_path="../x",
         )
+
+
+def test_analysis_detects_missing_include_dir(tmp_path):
+    repo = _make_repo(tmp_path)
+    assert not analyze_repository_structure(repo)["has_include_dir"]
+    (repo / "include" / "lib").mkdir(parents=True)
+    (repo / "include" / "lib" / "lib.hpp").write_text("")
+    assert analyze_repository_structure(repo)["has_include_dir"]
+
+
+def test_check_header_layout():
+    assert check_header_layout({"has_include_dir": True}, None) == []
+    assert check_header_layout({"has_include_dir": False}, ".") == []
+    assert check_header_layout({"has_include_dir": False}, None) == [
+        "The repository has no include/ directory with headers"
+    ]
+    errors = check_header_layout({"has_include_dir": False, "has_cmake": True}, None)
+    assert errors[-1] == CMAKE_NOT_HEADER_ONLY_NOTE
