@@ -14,10 +14,12 @@ from core.fortran_handler import FortranHandler
 from core.git_operations import GitManager
 from core.github_auth import get_github_token_via_gh_cli, get_github_token_via_oauth
 from core.go_handler import (
+    AmbiguousImportPathError,
     GoHandler,
     GoModuleResolutionError,
     detect_import_path,
     resolve_go_module,
+    validate_import_path,
 )
 from core.library_paths import check_header_layout
 from core.library_utils import (
@@ -978,6 +980,22 @@ def process_fortran_library(
             raise
 
 
+def resolve_import_path(module: str, version: str, import_path: str | None) -> str | None:
+    """Check a given import path, or detect the one to use; raises GoModuleResolutionError."""
+    click.echo("Checking module structure...")
+    if import_path:
+        validate_import_path(module, version, import_path)
+        click.echo(f"Using import path {import_path}")
+        return import_path
+
+    detected = detect_import_path(module, version)
+    if detected:
+        click.echo(f"No package at the module root, using the only candidate {detected}")
+    else:
+        click.echo("Root package is importable")
+    return detected
+
+
 def process_go_library(
     config: LibraryConfig,
     github_token: str | None = None,
@@ -1008,6 +1026,18 @@ def process_go_library(
             config.module = resolved_module
             config.library_id = GoHandler.suggest_library_id_static(resolved_module)
 
+        try:
+            config.import_path = resolve_import_path(
+                config.module, config.get_primary_version(), config.import_path
+            )
+        except AmbiguousImportPathError as e:
+            click.echo(f"Error: {e}", err=True)
+            click.echo("Pass --import-path with the one to build.", err=True)
+            return
+        except GoModuleResolutionError as e:
+            click.echo(f"Error: {e}", err=True)
+            return
+
     with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
@@ -1023,15 +1053,6 @@ def process_go_library(
         go_handler = GoHandler(infra_repo_path, main_repo_path, debug=debug)
 
         try:
-            if config.module and not config.import_path:
-                click.echo("Checking module structure...")
-                detected = detect_import_path(config.module, config.get_primary_version())
-                if detected:
-                    click.echo(f"Root package not importable, using: {detected}")
-                    config.import_path = detected
-                else:
-                    click.echo("Root package is importable")
-
             library_id = go_handler.add_library(config)
             if not library_id:
                 click.echo("Failed to add library to libraries.yaml", err=True)

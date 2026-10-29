@@ -4,9 +4,40 @@ from pathlib import Path
 import inquirer
 
 from core.cpp_handler import CppHandler
-from core.go_handler import GoHandler, detect_import_path, resolve_go_module
+from core.go_handler import (
+    AmbiguousImportPathError,
+    GoHandler,
+    detect_import_path,
+    is_package_in_module,
+    resolve_go_module,
+)
 from core.library_utils import filter_main_cmake_targets
 from core.models import BuildTool, Language, LibraryConfig, LibraryType, LinkType
+
+
+def ask_go_import_path(ambiguity: AmbiguousImportPathError) -> str:
+    """Ask which package to build when a Go module's root has none and there are several."""
+    module_path = ambiguity.module_path
+    print(f"\n{module_path} has no package at its root. Top-level packages:")
+    for candidate in ambiguity.candidates:
+        print(f"  {candidate}")
+
+    def full_import_path(answer: str) -> str:
+        answer = answer.strip().strip("/")
+        if answer == module_path or answer.startswith(f"{module_path}/"):
+            return answer
+        return f"{module_path}/{answer}"
+
+    question = [
+        inquirer.Text(
+            "import_path",
+            message="Which package should be built? (import path, or path within the module)",
+            validate=lambda _, x: bool(x.strip())
+            and is_package_in_module(module_path, full_import_path(x), ambiguity.packages)
+            or f"Not a package in {module_path}@{ambiguity.version}",
+        )
+    ]
+    return full_import_path(inquirer.prompt(question)["import_path"])
 
 
 def ask_library_questions() -> LibraryConfig:
@@ -93,25 +124,18 @@ def ask_library_questions() -> LibraryConfig:
         ]
         go_id_answer = inquirer.prompt(go_id_question)
 
-        # Auto-detect import path if not already resolved from subpackage
-        detected_import_path = resolved_import
-        if not detected_import_path:
+        import_path = resolved_import
+        if not import_path:
             print("\nChecking module structure...")
-            detected_import_path = detect_import_path(module_path, first_version)
-            if detected_import_path:
-                print(f"Root package not importable, detected: {detected_import_path}")
+            try:
+                import_path = detect_import_path(module_path, first_version)
+            except AmbiguousImportPathError as e:
+                import_path = ask_go_import_path(e)
             else:
-                print("Root package is importable")
-
-        go_import_path_question = [
-            inquirer.Text(
-                "import_path",
-                message="Import path override (leave empty if root is importable)",
-                default=detected_import_path or "",
-            )
-        ]
-        go_import_path_answer = inquirer.prompt(go_import_path_question)
-        import_path = go_import_path_answer["import_path"].strip() or None
+                if import_path:
+                    print(f"No package at the module root, using the only candidate {import_path}")
+                else:
+                    print("Root package is importable")
 
         config = LibraryConfig(
             language=language,

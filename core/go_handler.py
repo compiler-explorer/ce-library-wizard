@@ -115,7 +115,7 @@ def module_to_github_url(module_path: str) -> str | None:
 
 
 class GoModuleResolutionError(ValueError):
-    """Raised when no module the Go proxy serves can be found for the given path."""
+    """Raised when the Go module, or the package to build from it, cannot be resolved."""
 
 
 def escape_module_path(module_path: str) -> str:
@@ -231,43 +231,61 @@ def resolve_go_module(module_path: str, version: str) -> tuple[str, str | None]:
     return declared, import_path
 
 
-def _pick_best_subpackage(module_path: str, subpackages: set[str]) -> str:
+# Top-level directories that are not offered as the package to build
+NON_LIBRARY_DIRS = frozenset(
+    {
+        "internal",
+        "testdata",
+        "vendor",
+        "cmd",
+        "example",
+        "examples",
+        "tools",
+        "hack",
+        "scripts",
+        "doc",
+        "docs",
+        "bench",
+        "benchmarks",
+        "test",
+        "testing",
+        "testutil",
+    }
+)
+
+
+class AmbiguousImportPathError(GoModuleResolutionError):
+    """Raised when a module's root has no package and several packages could be built instead."""
+
+    def __init__(self, module_path: str, version: str, packages: set[str], candidates: list[str]):
+        self.module_path = module_path
+        self.version = version
+        self.packages = packages
+        self.candidates = candidates
+        listing = "\n".join(f"  {candidate}" for candidate in candidates)
+        super().__init__(
+            f"{module_path}@{version} has no package at its root, and there are several "
+            f"packages to choose from:\n{listing}"
+        )
+
+
+def _is_go_tool_ignored(directory: str) -> bool:
+    """Whether the go tool ignores this directory: testdata, or a name starting with . or _."""
+    return any(
+        part == "testdata" or part.startswith((".", "_")) for part in directory.split("/") if part
+    )
+
+
+def fetch_module_packages(module_path: str, version: str) -> set[str]:
     """
-    Pick the most likely "main" subpackage from candidates.
-
-    Heuristics (in priority order):
-    1. Subpackage whose name is a prefix of the module name or vice versa
-       (e.g., "proto" for module "protobuf")
-    2. Shortest name among remaining candidates
-    3. Alphabetically first as tiebreaker
-    """
-    module_name = module_path.rstrip("/").split("/")[-1].lower()
-    candidates = sorted(subpackages)
-
-    # Look for prefix relationship with module name
-    for sub in candidates:
-        sub_lower = sub.lower()
-        if module_name.startswith(sub_lower) or sub_lower.startswith(module_name):
-            return sub
-
-    # Fall back to shortest name (likely the most "core" package)
-    return min(candidates, key=lambda s: (len(s), s))
-
-
-def detect_import_path(module_path: str, version: str) -> str | None:
-    """
-    Detect if a Go module needs an import_path override by checking
-    whether the root package has importable Go source files.
-
-    Downloads the module zip from the Go proxy and inspects the file listing.
-
-    Args:
-        module_path: Go module path (e.g., google.golang.org/protobuf)
-        version: Version string (e.g., v1.36.0)
+    List the packages in a Go module, from the module zip the Go proxy serves.
 
     Returns:
-        None if the root package is importable (no override needed),
-        or the import path of the best subpackage to use as override.
+        The directories, relative to the module root, that hold non-test .go files.
+        The root itself is "".
+
+    Raises:
+        GoModuleResolutionError: if the zip cannot be downloaded or read.
     """
     if not version.startswith("v"):
         version = f"v{version}"
@@ -278,84 +296,111 @@ def detect_import_path(module_path: str, version: str) -> str | None:
     try:
         with urllib.request.urlopen(zip_url, timeout=30) as response:
             zip_data = io.BytesIO(response.read())
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
-        logger.warning(f"Could not download module zip: {e}")
-        return None
+    except urllib.error.HTTPError as e:
+        raise GoModuleResolutionError(
+            f"Could not download {module_path}@{version} from the Go module proxy: HTTP {e.code}"
+        ) from e
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise GoModuleResolutionError(
+            f"Could not download {module_path}@{version} from the Go module proxy: {e}"
+        ) from e
 
+    # Paths in the zip look like module@version/dir/file.go
+    prefix = f"{module_path}@{version}/"
+    packages: set[str] = set()
     try:
         with zipfile.ZipFile(zip_data) as zf:
-            # The zip has paths like: module@version/file.go
-            prefix = f"{module_path}@{version}/"
-            root_has_go = False
-            subpackages: set[str] = set()
-
             for name in zf.namelist():
                 if not name.startswith(prefix):
                     continue
-
-                rel = name[len(prefix) :]
-                if not rel:
+                directory, _, filename = name[len(prefix) :].rpartition("/")
+                if not filename.endswith(".go") or filename.endswith("_test.go"):
                     continue
+                if _is_go_tool_ignored(directory):
+                    continue
+                packages.add(directory)
+    except zipfile.BadZipFile as e:
+        raise GoModuleResolutionError(
+            f"The Go module proxy served an invalid zip for {module_path}@{version}"
+        ) from e
 
-                parts = rel.split("/")
+    return packages
 
-                # Check for .go files in root (not test files, not build tag only)
-                if len(parts) == 1 and parts[0].endswith(".go"):
-                    fname = parts[0]
-                    if fname.endswith("_test.go"):
-                        continue
-                    # Read file to check it has a real package declaration
-                    # (some roots only have doc.go with no exported symbols,
-                    # but that's still importable)
-                    root_has_go = True
 
-                # Track subpackages that have .go files
-                if len(parts) >= 2 and parts[-1].endswith(".go"):
-                    if parts[-1].endswith("_test.go"):
-                        continue
-                    subdir = parts[0]
-                    # Skip non-library directories
-                    skip_dirs = {
-                        "internal",
-                        "testdata",
-                        "vendor",
-                        "cmd",
-                        "example",
-                        "examples",
-                        "tools",
-                        "hack",
-                        "scripts",
-                        "doc",
-                        "docs",
-                        "bench",
-                        "benchmarks",
-                        "test",
-                        "testing",
-                        "testutil",
-                    }
-                    if subdir in skip_dirs:
-                        continue
-                    subpackages.add(subdir)
+def import_path_candidates(module_path: str, packages: set[str]) -> list[str]:
+    """The import paths of the module's top-level packages that could be built in its place."""
+    return sorted(
+        f"{module_path}/{package}"
+        for package in packages
+        if package and "/" not in package and package not in NON_LIBRARY_DIRS
+    )
 
-            if root_has_go:
-                logger.info("Root package is importable, no override needed")
-                return None
 
-            if not subpackages:
-                logger.warning("No importable subpackages found")
-                return None
+def is_package_in_module(module_path: str, import_path: str, packages: set[str]) -> bool:
+    """Whether import_path names one of the packages (as fetch_module_packages lists them)."""
+    if import_path == module_path:
+        return "" in packages
+    if not import_path.startswith(f"{module_path}/"):
+        return False
+    return import_path[len(module_path) + 1 :] in packages
 
-            best = _pick_best_subpackage(module_path, subpackages)
-            import_path = f"{module_path}/{best}"
-            logger.info(
-                f"Root package not importable, suggesting: {import_path} "
-                f"(from {len(subpackages)} candidates: {sorted(subpackages)[:5]})"
-            )
-            return import_path
 
-    except zipfile.BadZipFile:
-        logger.warning("Invalid zip file from module proxy")
+def detect_import_path(module_path: str, version: str) -> str | None:
+    """
+    Work out the package to build for a Go module.
+
+    Returns:
+        None if the module root holds a package (no import_path needed), otherwise the
+        import path of the module's only top-level package.
+
+    Raises:
+        AmbiguousImportPathError: if the root has no package and there are several
+        top-level packages; the caller has to choose one.
+        GoModuleResolutionError: if the module zip cannot be fetched or read, or the
+        root has no package and there is no top-level package to use instead.
+    """
+    if not version.startswith("v"):
+        version = f"v{version}"
+
+    packages = fetch_module_packages(module_path, version)
+    if "" in packages:
+        logger.info("Root package is importable, no import_path needed")
         return None
+
+    candidates = import_path_candidates(module_path, packages)
+    if not candidates:
+        raise GoModuleResolutionError(
+            f"{module_path}@{version} has no package at its root, and no top-level package "
+            "to build instead"
+        )
+    if len(candidates) > 1:
+        raise AmbiguousImportPathError(module_path, version, packages, candidates)
+
+    logger.info(f"Root package not importable, using its only top-level package {candidates[0]}")
+    return candidates[0]
+
+
+def validate_import_path(module_path: str, version: str, import_path: str) -> None:
+    """
+    Check that import_path names a package inside the module at this version.
+
+    Raises:
+        GoModuleResolutionError: if it does not, or the module zip cannot be fetched or read.
+    """
+    if not version.startswith("v"):
+        version = f"v{version}"
+
+    if import_path != module_path and not import_path.startswith(f"{module_path}/"):
+        raise GoModuleResolutionError(
+            f"Import path {import_path} is not inside module {module_path}"
+        )
+
+    packages = fetch_module_packages(module_path, version)
+    if not is_package_in_module(module_path, import_path, packages):
+        raise GoModuleResolutionError(
+            f"Import path {import_path} is not a package in {module_path}@{version}: "
+            "it has no non-test .go files there"
+        )
 
 
 def version_to_key(version: str) -> str:
