@@ -8,7 +8,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-import yaml
+from ruamel.yaml import YAML
 
 from .build_tester import (
     BuildTestResult,
@@ -16,6 +16,7 @@ from .build_tester import (
     run_go_build_test,
 )
 from .constants import GO_PROPERTIES_PATH, LIBRARIES_YAML_PATH, MAIN_REPO_PATH_REQUIRED
+from .file_modifications import insert_library_properties
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
@@ -24,6 +25,25 @@ from .models import LibraryConfig
 logger = logging.getLogger(__name__)
 
 GO_PROXY_URL = "https://proxy.golang.org"
+
+
+def round_trip_yaml() -> YAML:
+    """
+    A YAML loader/dumper that keeps libraries.yaml's comments, key order and quoting, so
+    adding a library only changes the lines it adds. Matches infra's LibraryYaml.
+    """
+    yaml = YAML(typ="rt")
+    yaml.preserve_quotes = True
+    yaml.width = 4096
+    yaml.indent(mapping=2, sequence=2, offset=0)
+    return yaml
+
+
+def insert_sorted(mapping, key: str, value) -> None:
+    """Add a new key to a libraries.yaml mapping, before the first key that sorts after it."""
+    entry = {k: value[k] for k in sorted(value)} if isinstance(value, dict) else value
+    position = next((i for i, existing in enumerate(mapping) if str(existing) > key), len(mapping))
+    mapping.insert(position, key, entry)
 
 
 def suggest_library_id_from_module(module_path: str) -> str:
@@ -103,18 +123,26 @@ def escape_module_path(module_path: str) -> str:
     return re.sub(r"[A-Z]", lambda m: "!" + m.group(0).lower(), module_path)
 
 
-def normalise_module_input(module_path: str) -> str:
-    """Strip whitespace, a URL scheme and trailing slashes from a user-entered module path."""
-    return re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", module_path.strip()).rstrip("/")
+def normalize_module_input(module_path: str) -> str:
+    """
+    Turn what a user is likely to paste (a repository URL) into a Go module path.
+
+    The golang.org/x repositories are hosted on go.googlesource.com, but their module
+    paths are golang.org/x/<name>.
+    """
+    path = module_path.strip()
+    path = re.sub(r"^[a-z]+://", "", path).rstrip("/")
+    path = re.sub(r"\.git$", "", path)
+    googlesource = re.match(r"^go\.googlesource\.com/([^/]+)(/.*)?$", path)
+    if googlesource:
+        path = f"golang.org/x/{googlesource.group(1)}{googlesource.group(2) or ''}"
+    return path
 
 
-def parse_go_mod_module(go_mod: str) -> str | None:
-    """Return the path from a go.mod file's `module` line, or None if there isn't one."""
-    for line in go_mod.splitlines():
-        match = re.match(r"^\s*module\s+(\S+)", line)
-        if match:
-            return match.group(1).strip('"`')
-    return None
+def parse_module_directive(go_mod: str) -> str | None:
+    """Return the path from a go.mod file's `module` directive."""
+    match = re.search(r"^module\s+\"?([^\s\"]+)\"?", go_mod, re.MULTILINE)
+    return match.group(1) if match else None
 
 
 def fetch_go_module_path(module_path: str, version: str) -> tuple[str | None, str | None]:
@@ -139,7 +167,7 @@ def fetch_go_module_path(module_path: str, version: str) -> tuple[str | None, st
     except (urllib.error.URLError, TimeoutError) as e:
         return None, f"Error connecting to Go module proxy: {e}"
 
-    declared = parse_go_mod_module(go_mod)
+    declared = parse_module_directive(go_mod)
     if not declared:
         return None, f"No module line in the go.mod served for {module_path}@{version}"
     return declared, None
@@ -170,7 +198,7 @@ def resolve_go_module(module_path: str, version: str) -> tuple[str, str | None]:
     if not version.startswith("v"):
         version = f"v{version}"
 
-    original = normalise_module_input(module_path)
+    original = normalize_module_input(module_path)
     parts = original.split("/")
     first_error = None
 
@@ -389,15 +417,16 @@ class GoHandler:
                 logger.error(f"libraries.yaml not found at {libraries_yaml_path}")
                 return None
 
+            yaml = round_trip_yaml()
             with open(libraries_yaml_path, encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+                data = yaml.load(f)
 
             if "libraries" not in data:
                 data["libraries"] = {}
 
             libraries = data["libraries"]
             if "go" not in libraries:
-                libraries["go"] = {}
+                insert_sorted(libraries, "go", {})
 
             go_libs = libraries["go"]
 
@@ -421,14 +450,14 @@ class GoHandler:
                 }
                 if config.import_path:
                     library_entry["import_path"] = config.import_path
-                go_libs[library_id] = library_entry
+                insert_sorted(go_libs, library_id, library_entry)
                 logger.info(
                     f"Added new Go library {library_id} ({config.module}) with version {version}"
                 )
 
             # Save updated libraries.yaml
             with open(libraries_yaml_path, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+                yaml.dump(data, f)
 
             return library_id
 
@@ -518,28 +547,7 @@ class GoHandler:
                     else:
                         logger.info(f"Version {version_key} already exists in properties")
             else:
-                # New library - add properties
-                # Find insertion point - append at end of file
-                # Look for tools section delimiter
-                tools_section_match = re.search(
-                    r"\n(#{33}\n#{33}\n# Installed tools)",
-                    content,
-                )
-
-                if tools_section_match:
-                    insertion_point = tools_section_match.start()
-                    content = (
-                        content[:insertion_point]
-                        + "\n"
-                        + "\n".join(library_props)
-                        + "\n\n"
-                        + content[insertion_point:]
-                    )
-                else:
-                    # Just append at end
-                    if not content.endswith("\n"):
-                        content += "\n"
-                    content += "\n" + "\n".join(library_props) + "\n"
+                content = insert_library_properties(content, library_props)
 
             with open(props_file, "w", encoding="utf-8") as f:
                 f.write(content)

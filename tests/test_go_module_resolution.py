@@ -7,7 +7,6 @@ import pytest
 from core.go_handler import (
     GoModuleResolutionError,
     escape_module_path,
-    parse_go_mod_module,
     resolve_go_module,
 )
 
@@ -47,22 +46,6 @@ def resolve_with(mod_files: dict[str, str], module_path: str, version: str):
 )
 def test_escape_module_path(module_path, expected):
     assert escape_module_path(module_path) == expected
-
-
-# --- parse_go_mod_module ---
-
-
-@pytest.mark.parametrize(
-    ("go_mod", "expected"),
-    [
-        ("module go.uber.org/zap\n\ngo 1.19\n", "go.uber.org/zap"),
-        ('// comment\nmodule "golang.org/x/sys"\n', "golang.org/x/sys"),
-        ("module example.com/mod // trailing comment\n", "example.com/mod"),
-        ("go 1.21\n", None),
-    ],
-)
-def test_parse_go_mod_module(go_mod, expected):
-    assert parse_go_mod_module(go_mod) == expected
 
 
 # --- resolve_go_module ---
@@ -133,9 +116,15 @@ def test_uppercase_letters_are_escaped_in_proxy_url():
     assert requested == [f"{PROXY}/github.com/!burnt!sushi/toml/@v/v1.4.0.mod"]
 
 
+def test_googlesource_url_resolves_to_golang_org_module():
+    files = {f"{PROXY}/golang.org/x/sys/@v/v0.49.0.mod": "module golang.org/x/sys\n"}
+    (module, import_path), _ = resolve_with(files, "https://go.googlesource.com/sys", "v0.49.0")
+    assert (module, import_path) == ("golang.org/x/sys", None)
+
+
 def test_unknown_module_raises():
-    with pytest.raises(GoModuleResolutionError, match="go.googlesource.com/sys"):
-        resolve_with({}, "https://go.googlesource.com/sys", "v0.49.0")
+    with pytest.raises(GoModuleResolutionError, match="example.com/missing"):
+        resolve_with({}, "https://example.com/missing", "v1.0.0")
 
 
 def test_declared_module_not_served_raises():
