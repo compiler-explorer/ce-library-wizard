@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import platform
+import sys
 import traceback
 
 import click
@@ -59,7 +60,7 @@ def process_cpp_library(
     build_test: str = "auto",
     keep_temp: bool = False,
     yes: bool = False,
-):
+) -> bool:
     """Process a C++ library addition"""
     click.echo(f"\nProcessing C++ library: {config.library_id} v{config.version}")
 
@@ -83,7 +84,7 @@ def process_cpp_library(
             library_id = cpp_handler.add_library(config)
             if not library_id:
                 click.echo("❌ Failed to add library to libraries.yaml", err=True)
-                return
+                return False
 
             # Generate C++ properties
             click.echo("Generating C++ properties...")
@@ -94,7 +95,7 @@ def process_cpp_library(
                 config.include_path,
             ):
                 click.echo("❌ Failed to generate C++ properties", err=True)
-                return
+                return False
 
             click.echo("✓ Modified libraries.yaml and generated properties")
 
@@ -108,14 +109,14 @@ def process_cpp_library(
                     if not cpp_handler.run_install_test(library_id, config.version):
                         click.echo("❌ Install test failed. Aborting.", err=True)
                         click.echo(INCLUDE_PATH_HINT, err=True)
-                        return
+                        return False
                     click.echo("✓ Install test passed")
             else:
                 # Just check paths without installing
                 click.echo("\n🔍 Checking library paths...")
                 if not cpp_handler.check_library_paths(library_id, config.version):
                     click.echo("❌ Path check failed. Aborting.", err=True)
-                    return
+                    return False
                 click.echo("✓ Path check passed")
 
             # Run build test based on mode
@@ -135,7 +136,7 @@ def process_cpp_library(
                     if not available:
                         if should_build_test == "yes":
                             click.echo(f"\n❌ {msg}", err=True)
-                            return
+                            return False
                         # Auto mode: silently skip if no compiler
                     else:
                         click.echo(f"\n🔨 Running build test... ({msg})")
@@ -155,7 +156,7 @@ def process_cpp_library(
                                     err=True,
                                 )
                             click.echo("Aborting.", err=True)
-                            return
+                            return False
                         click.echo("✓ Build test passed")
                         if build_result.artifacts:
                             click.echo("  Artifacts produced:")
@@ -181,7 +182,7 @@ def process_cpp_library(
                                     err=True,
                                 )
                                 click.echo("Aborting.", err=True)
-                                return
+                                return False
 
             # Show diffs if verify or dry_run flag is set
             if verify or dry_run:
@@ -210,11 +211,11 @@ def process_cpp_library(
                 # Exit early if dry-run mode
                 if dry_run:
                     click.echo("\n🔍 Dry run complete - no changes committed.")
-                    return
+                    return True
 
                 if not yes and not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
-                    return
+                    return False
 
             # Commit changes
             commit_msg = f"Add C++ library {config.library_id} v{config.version}"
@@ -224,7 +225,7 @@ def process_cpp_library(
 
             if not infra_committed and not main_committed:
                 click.echo("⚠️  Library version already exists - no changes to commit.")
-                return
+                return True
 
             if github_token:
                 # Only proceed with pushing and PRs if we have commits
@@ -273,6 +274,8 @@ def process_cpp_library(
                     click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
                 display_authentication_warning()
+                return False
+            return True
 
         except Exception as e:
             click.echo(f"\n❌ Error processing C++ library: {e}", err=True)
@@ -288,7 +291,7 @@ def process_rust_library(
     build_test: str = "auto",
     keep_temp: bool = False,
     yes: bool = False,
-):
+) -> bool:
     """Process a Rust library addition"""
     click.echo(f"\nProcessing Rust crate: {config.name} v{config.version}")
 
@@ -324,7 +327,7 @@ def process_rust_library(
                     if not available:
                         if should_build_test == "yes":
                             click.echo(f"\n❌ {msg}", err=True)
-                            return
+                            return False
                         # Auto mode: silently skip if no compiler
                     else:
                         click.echo(f"\n🔨 Running Rust build test... ({msg})")
@@ -344,7 +347,7 @@ def process_rust_library(
                                     err=True,
                                 )
                             click.echo("Aborting.", err=True)
-                            return
+                            return False
                         click.echo("✓ Build test passed")
                         if build_result.artifacts:
                             click.echo("  Artifacts produced:")
@@ -382,11 +385,11 @@ def process_rust_library(
                 # Exit early if dry-run mode
                 if dry_run:
                     click.echo("\n🔍 Dry run complete - no changes committed.")
-                    return
+                    return True
 
                 if not yes and not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
-                    return
+                    return False
 
             # Commit changes
             commit_msg = f"Add Rust crate {config.name} v{config.version}"
@@ -422,6 +425,8 @@ def process_rust_library(
                 click.echo(f"  - Main: {main_pr_url}")
             else:
                 display_authentication_warning()
+                return False
+            return True
 
         except Exception as e:
             click.echo(f"\n❌ Error processing Rust library: {e}", err=True)
@@ -438,7 +443,7 @@ def process_c_library(
     build_test: str = "auto",
     keep_temp: bool = False,
     yes: bool = False,
-):
+) -> bool:
     """Process a C library addition"""
     click.echo(f"\nProcessing C library: {config.library_id} v{config.version}")
 
@@ -462,7 +467,7 @@ def process_c_library(
             library_id = c_handler.add_library(config)
             if not library_id:
                 click.echo("❌ Failed to add library to libraries.yaml", err=True)
-                return
+                return False
 
             # Generate C properties
             click.echo("Generating C properties...")
@@ -473,7 +478,7 @@ def process_c_library(
                 config.include_path,
             ):
                 click.echo("❌ Failed to generate C properties", err=True)
-                return
+                return False
 
             click.echo("✓ Modified libraries.yaml and generated properties")
 
@@ -481,7 +486,7 @@ def process_c_library(
             click.echo("\n🔍 Checking library paths...")
             if not c_handler.check_library_paths(library_id, config.version):
                 click.echo("❌ Path check failed. Aborting.", err=True)
-                return
+                return False
             click.echo("✓ Path check passed")
 
             # Run build test based on mode
@@ -501,7 +506,7 @@ def process_c_library(
                     if not available:
                         if should_build_test == "yes":
                             click.echo(f"\n❌ {msg}", err=True)
-                            return
+                            return False
                         # Auto mode: silently skip if no compiler
                     else:
                         click.echo(f"\n🔨 Running build test... ({msg})")
@@ -521,7 +526,7 @@ def process_c_library(
                                     err=True,
                                 )
                             click.echo("Aborting.", err=True)
-                            return
+                            return False
                         click.echo("✓ Build test passed")
                         if build_result.artifacts:
                             click.echo("  Artifacts produced:")
@@ -547,7 +552,7 @@ def process_c_library(
                                     err=True,
                                 )
                                 click.echo("Aborting.", err=True)
-                                return
+                                return False
 
             # Show diffs if verify or dry_run flag is set
             if verify or dry_run:
@@ -576,11 +581,11 @@ def process_c_library(
                 # Exit early if dry-run mode
                 if dry_run:
                     click.echo("\n🔍 Dry run complete - no changes committed.")
-                    return
+                    return True
 
                 if not yes and not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
-                    return
+                    return False
 
             # Commit changes
             commit_msg = f"Add C library {config.library_id} v{config.version}"
@@ -590,7 +595,7 @@ def process_c_library(
 
             if not infra_committed and not main_committed:
                 click.echo("⚠️  Library version already exists - no changes to commit.")
-                return
+                return True
 
             if github_token:
                 # Only proceed with pushing and PRs if we have commits
@@ -639,6 +644,8 @@ def process_c_library(
                     click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
                 display_authentication_warning()
+                return False
+            return True
 
         except Exception as e:
             click.echo(f"\n❌ Error processing C library: {e}", err=True)
@@ -652,14 +659,14 @@ def process_top_rust_crates(
     debug: bool = False,
     keep_temp: bool = False,
     yes: bool = False,
-):
+) -> bool:
     """Process adding the top 100 Rust crates"""
     click.echo("\nProcessing top 100 Rust crates...")
     click.echo("⚠️  This will add a large number of crates to Compiler Explorer.")
 
     if not yes and not click.confirm("Do you want to proceed?"):
         click.echo("Operation cancelled.")
-        return
+        return False
 
     with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
@@ -687,7 +694,7 @@ def process_top_rust_crates(
             if result.returncode != 0:
                 click.echo("❌ Failed to add top Rust crates", err=True)
                 click.echo(f"Error: {result.stderr}", err=True)
-                return
+                return False
 
             click.echo("✓ Successfully added top 100 Rust crates to libraries.yaml")
 
@@ -739,11 +746,11 @@ def process_top_rust_crates(
                 # Exit early if dry-run mode
                 if dry_run:
                     click.echo("\n🔍 Dry run complete - no changes committed.")
-                    return
+                    return True
 
                 if not yes and not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
-                    return
+                    return False
 
             # Commit changes
             commit_msg = "Add top 100 Rust crates to Compiler Explorer"
@@ -753,7 +760,7 @@ def process_top_rust_crates(
 
             if not infra_committed and not main_committed:
                 click.echo("⚠️  No changes to commit.")
-                return
+                return True
 
             if github_token:
                 # Only proceed with pushing and PRs if we have commits
@@ -799,6 +806,8 @@ def process_top_rust_crates(
                     click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
                 display_authentication_warning()
+                return False
+            return True
 
         except Exception as e:
             click.echo(f"\n❌ Error processing top Rust crates: {e}", err=True)
@@ -814,7 +823,7 @@ def process_fortran_library(
     build_test: str = "auto",
     keep_temp: bool = False,
     yes: bool = False,
-):
+) -> bool:
     """Process a Fortran library addition"""
     click.echo(f"\nProcessing Fortran library: {config.library_id or 'unknown'} v{config.version}")
 
@@ -838,13 +847,13 @@ def process_fortran_library(
             library_id = fortran_handler.add_library(config)
             if not library_id:
                 click.echo("❌ Failed to add library to libraries.yaml", err=True)
-                return
+                return False
 
             click.echo("Updating fortran.amazon.properties...")
             config.library_id = library_id
             if not fortran_handler.update_fortran_properties(library_id, config):
                 click.echo("❌ Failed to update Fortran properties", err=True)
-                return
+                return False
 
             click.echo(SUCCESS_MODIFIED_FILES)
 
@@ -861,7 +870,7 @@ def process_fortran_library(
                     if not available:
                         if should_build_test == "yes":
                             click.echo(f"\n❌ {msg}", err=True)
-                            return
+                            return False
                         # Auto mode: silently skip if no compiler
                     else:
                         click.echo(f"\n🔨 Running Fortran build test... ({msg})")
@@ -881,7 +890,7 @@ def process_fortran_library(
                                     err=True,
                                 )
                             click.echo("Aborting.", err=True)
-                            return
+                            return False
                         click.echo("✓ Build test passed")
                         if build_result.artifacts:
                             click.echo("  Artifacts produced:")
@@ -914,11 +923,11 @@ def process_fortran_library(
                 # Exit early if dry-run mode
                 if dry_run:
                     click.echo("\n🔍 Dry run complete - no changes committed.")
-                    return
+                    return True
 
                 if not yes and not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
-                    return
+                    return False
 
             commit_msg = f"Add Fortran library {library_id} v{config.version}"
 
@@ -927,7 +936,7 @@ def process_fortran_library(
 
             if not infra_committed and not main_committed:
                 click.echo("⚠️  Library version already exists - no changes to commit.")
-                return
+                return True
 
             if github_token:
                 # Only proceed with pushing and PRs if we have commits
@@ -974,6 +983,8 @@ def process_fortran_library(
                     click.echo("\n⚠️  No changes to push - skipping PR creation.")
             else:
                 display_authentication_warning()
+                return False
+            return True
 
         except Exception as e:
             click.echo(f"\n❌ Error processing Fortran library: {e}", err=True)
@@ -1005,7 +1016,7 @@ def process_go_library(
     build_test: str = "auto",
     keep_temp: bool = False,
     yes: bool = False,
-):
+) -> bool:
     """Process a Go library addition"""
     click.echo(
         f"\nProcessing Go module: {config.module} ({config.library_id or 'auto'}) {config.version}"
@@ -1019,7 +1030,7 @@ def process_go_library(
             )
         except GoModuleResolutionError as e:
             click.echo(f"Error: {e}", err=True)
-            return
+            return False
         if resolved_module != config.module:
             click.echo(f"Using module path {resolved_module} (entered: {config.module})")
             config.import_path = config.import_path or resolved_import
@@ -1033,10 +1044,10 @@ def process_go_library(
         except AmbiguousImportPathError as e:
             click.echo(f"Error: {e}", err=True)
             click.echo("Pass --import-path with the one to build.", err=True)
-            return
+            return False
         except GoModuleResolutionError as e:
             click.echo(f"Error: {e}", err=True)
-            return
+            return False
 
     with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
@@ -1056,13 +1067,13 @@ def process_go_library(
             library_id = go_handler.add_library(config)
             if not library_id:
                 click.echo("Failed to add library to libraries.yaml", err=True)
-                return
+                return False
 
             click.echo("Updating go.amazon.properties...")
             config.library_id = library_id
             if not go_handler.update_go_properties(library_id, config):
                 click.echo("Failed to update Go properties", err=True)
-                return
+                return False
 
             click.echo(SUCCESS_MODIFIED_FILES)
 
@@ -1079,7 +1090,7 @@ def process_go_library(
                     if not available:
                         if should_build_test == "yes":
                             click.echo(f"\n{msg}", err=True)
-                            return
+                            return False
                         # Auto mode: silently skip if no compiler
                     else:
                         click.echo(f"\nRunning Go build test... ({msg})")
@@ -1099,7 +1110,7 @@ def process_go_library(
                                     err=True,
                                 )
                             click.echo("Aborting.", err=True)
-                            return
+                            return False
                         click.echo("Build test passed")
                         if build_result.artifacts:
                             click.echo("  Artifacts produced:")
@@ -1132,11 +1143,11 @@ def process_go_library(
                 # Exit early if dry-run mode
                 if dry_run:
                     click.echo("\nDry run complete - no changes committed.")
-                    return
+                    return True
 
                 if not yes and not click.confirm("\nDo you want to proceed with these changes?"):
                     click.echo("Changes cancelled.")
-                    return
+                    return False
 
             commit_msg = f"Add Go library {library_id} {config.version}"
 
@@ -1145,7 +1156,7 @@ def process_go_library(
 
             if not infra_committed and not main_committed:
                 click.echo("Library version already exists - no changes to commit.")
-                return
+                return True
 
             if github_token:
                 # Only proceed with pushing and PRs if we have commits
@@ -1193,10 +1204,65 @@ def process_go_library(
                     click.echo("\nNo changes to push - skipping PR creation.")
             else:
                 display_authentication_warning()
+                return False
+            return True
 
         except Exception as e:
             click.echo(f"\nError processing Go library: {e}", err=True)
             raise
+
+
+def process_library(
+    config: LibraryConfig,
+    github_token: str | None,
+    verify: bool,
+    dry_run: bool,
+    debug: bool,
+    install_test: bool,
+    build_test: str,
+    keep_temp: bool,
+    yes: bool,
+) -> bool:
+    """Add one library version with its language's process function; False if it failed"""
+    if config.is_rust():
+        return process_rust_library(
+            config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
+        )
+    if config.language == Language.C:
+        return process_c_library(
+            config,
+            github_token,
+            verify,
+            dry_run,
+            debug,
+            install_test,
+            build_test,
+            keep_temp,
+            yes,
+        )
+    if config.language == Language.CPP:
+        return process_cpp_library(
+            config,
+            github_token,
+            verify,
+            dry_run,
+            debug,
+            install_test,
+            build_test,
+            keep_temp,
+            yes,
+        )
+    if config.language == Language.FORTRAN:
+        return process_fortran_library(
+            config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
+        )
+    if config.is_go():
+        return process_go_library(
+            config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
+        )
+    click.echo("\n⚠️  This language is not yet implemented.")
+    click.echo("Currently only Rust, C, C++, Fortran, and Go library additions are supported.")
+    return False
 
 
 @click.command()
@@ -1288,11 +1354,12 @@ def main(
                 github_token = get_github_token_via_oauth()
                 if not github_token:
                     click.echo("❌ Failed to authenticate. Exiting.", err=True)
-                    return 1
+                    sys.exit(1)
 
         # Handle top rust crates flag
         if top_rust_crates:
-            process_top_rust_crates(github_token, verify, dry_run, debug, keep_temp, yes)
+            if not process_top_rust_crates(github_token, verify, dry_run, debug, keep_temp, yes):
+                sys.exit(1)
             return
 
         # If all parameters provided, skip interactive questions
@@ -1436,80 +1503,12 @@ def main(
             versions = config.get_versions()
             click.echo(f"\n🔢 Processing {len(versions)} versions: {', '.join(versions)}")
 
+            failed = False
             for i, version in enumerate(versions, 1):
                 click.echo(f"\n--- Processing version {i}/{len(versions)}: {version} ---")
                 single_config = create_single_version_config(config, version)
-
-                # Process each version individually
-                if config.is_rust():
-                    process_rust_library(
-                        single_config,
-                        github_token,
-                        verify,
-                        dry_run,
-                        debug,
-                        build_test,
-                        keep_temp,
-                        yes,
-                    )
-                elif config.language == Language.C:
-                    process_c_library(
-                        single_config,
-                        github_token,
-                        verify,
-                        dry_run,
-                        debug,
-                        install_test,
-                        build_test,
-                        keep_temp,
-                        yes,
-                    )
-                elif config.language == Language.CPP:
-                    process_cpp_library(
-                        single_config,
-                        github_token,
-                        verify,
-                        dry_run,
-                        debug,
-                        install_test,
-                        build_test,
-                        keep_temp,
-                        yes,
-                    )
-                elif config.language == Language.FORTRAN:
-                    process_fortran_library(
-                        single_config,
-                        github_token,
-                        verify,
-                        dry_run,
-                        debug,
-                        build_test,
-                        keep_temp,
-                        yes,
-                    )
-                elif config.is_go():
-                    process_go_library(
-                        single_config,
-                        github_token,
-                        verify,
-                        dry_run,
-                        debug,
-                        build_test,
-                        keep_temp,
-                        yes,
-                    )
-                else:
-                    click.echo(f"\n⚠️  Language {config.language} is not yet implemented.")
-                    break
-        else:
-            # Single version processing (existing logic)
-            if config.is_rust():
-                process_rust_library(
-                    config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
-                )
-            elif config.language == Language.C:
-                process_c_library(
-                    config,
+                if not process_library(
+                    single_config,
                     github_token,
                     verify,
                     dry_run,
@@ -1518,41 +1517,31 @@ def main(
                     build_test,
                     keep_temp,
                     yes,
-                )
-            elif config.language == Language.CPP:
-                process_cpp_library(
-                    config,
-                    github_token,
-                    verify,
-                    dry_run,
-                    debug,
-                    install_test,
-                    build_test,
-                    keep_temp,
-                    yes,
-                )
-            elif config.language == Language.FORTRAN:
-                process_fortran_library(
-                    config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
-                )
-            elif config.is_go():
-                process_go_library(
-                    config, github_token, verify, dry_run, debug, build_test, keep_temp, yes
-                )
-            else:
-                click.echo("\n⚠️  This language is not yet implemented.")
-                click.echo(
-                    "Currently only Rust, C, C++, Fortran, and Go library additions are supported."
-                )
+                ):
+                    failed = True
+            if failed:
+                sys.exit(1)
+        elif not process_library(
+            config,
+            github_token,
+            verify,
+            dry_run,
+            debug,
+            install_test,
+            build_test,
+            keep_temp,
+            yes,
+        ):
+            sys.exit(1)
 
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, click.exceptions.Abort):
         click.echo("\n\nCancelled by user.")
-        return 1
+        sys.exit(130)
     except Exception as e:
         if debug:
             traceback.print_exc()
         click.echo(f"\nError: {e}", err=True)
-        return 1
+        sys.exit(1)
 
 
 if __name__ == "__main__":

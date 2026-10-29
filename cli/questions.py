@@ -15,6 +15,11 @@ from core.library_utils import filter_main_cmake_targets
 from core.models import BuildTool, Language, LibraryConfig, LibraryType, LinkType
 
 
+def prompt(questions: list) -> dict:
+    """inquirer.prompt, but let Ctrl-C reach main instead of returning None"""
+    return inquirer.prompt(questions, raise_keyboard_interrupt=True)
+
+
 def ask_go_import_path(ambiguity: AmbiguousImportPathError) -> str:
     """Ask which package to build when a Go module's root has none and there are several."""
     module_path = ambiguity.module_path
@@ -37,7 +42,7 @@ def ask_go_import_path(ambiguity: AmbiguousImportPathError) -> str:
             or f"Not a package in {module_path}@{ambiguity.version}",
         )
     ]
-    return full_import_path(inquirer.prompt(question)["import_path"])
+    return full_import_path(prompt(question)["import_path"])
 
 
 def ask_library_questions() -> LibraryConfig:
@@ -51,7 +56,7 @@ def ask_library_questions() -> LibraryConfig:
             choices=[lang.value for lang in Language],
         )
     ]
-    language_answer = inquirer.prompt(language_question)
+    language_answer = prompt(language_question)
     language = Language(language_answer["language"])
 
     # Special handling for Rust - only need name and version
@@ -63,7 +68,7 @@ def ask_library_questions() -> LibraryConfig:
                 validate=lambda _, x: len(x.strip()) > 0,
             )
         ]
-        rust_name_answer = inquirer.prompt(rust_name_question)
+        rust_name_answer = prompt(rust_name_question)
 
         rust_version_question = [
             inquirer.Text(
@@ -72,7 +77,7 @@ def ask_library_questions() -> LibraryConfig:
                 validate=lambda _, x: len(x.strip()) > 0,
             )
         ]
-        rust_version_answer = inquirer.prompt(rust_version_question)
+        rust_version_answer = prompt(rust_version_question)
 
         config = LibraryConfig(
             language=language, name=rust_name_answer["name"], version=rust_version_answer["version"]
@@ -88,7 +93,7 @@ def ask_library_questions() -> LibraryConfig:
                 validate=lambda _, x: len(x.strip()) > 0 and "/" in x,
             )
         ]
-        go_module_answer = inquirer.prompt(go_module_question)
+        go_module_answer = prompt(go_module_question)
 
         go_version_question = [
             inquirer.Text(
@@ -97,7 +102,7 @@ def ask_library_questions() -> LibraryConfig:
                 validate=lambda _, x: len(x.strip()) > 0,
             )
         ]
-        go_version_answer = inquirer.prompt(go_version_question)
+        go_version_answer = prompt(go_version_question)
 
         module_path = go_module_answer["module"]
         version_str = go_version_answer["version"]
@@ -122,7 +127,7 @@ def ask_library_questions() -> LibraryConfig:
                 or "Must start with a letter, lowercase alphanumeric and underscores only",
             )
         ]
-        go_id_answer = inquirer.prompt(go_id_question)
+        go_id_answer = prompt(go_id_question)
 
         import_path = resolved_import
         if not import_path:
@@ -154,7 +159,7 @@ def ask_library_questions() -> LibraryConfig:
             validate=lambda _, x: x.startswith("https://github.com/"),
         )
     ]
-    github_answer = inquirer.prompt(github_question)
+    github_answer = prompt(github_question)
 
     # Question 3: Version
     version_question = [
@@ -167,7 +172,7 @@ def ask_library_questions() -> LibraryConfig:
             validate=lambda _, x: len(x.strip()) > 0,
         )
     ]
-    version_answer = inquirer.prompt(version_question)
+    version_answer = prompt(version_question)
 
     # Initialize config with basic info
     config_data = {
@@ -189,7 +194,7 @@ def ask_library_questions() -> LibraryConfig:
                 or "Must be lowercase letters, numbers, and underscores only",
             )
         ]
-        library_id_answer = inquirer.prompt(library_id_question)
+        library_id_answer = prompt(library_id_question)
         config_data["library_id"] = library_id_answer["library_id"]
 
         print("\nAnalyzing repository to detect library type...")
@@ -230,7 +235,7 @@ def ask_library_questions() -> LibraryConfig:
                 else LibraryType.PACKAGED_HEADERS.value,
             )
         ]
-        library_type_answer = inquirer.prompt(library_type_question)
+        library_type_answer = prompt(library_type_question)
         config_data["library_type"] = LibraryType(library_type_answer["library_type"])
         if check_file:
             config_data["check_file"] = check_file
@@ -253,7 +258,7 @@ def ask_library_questions() -> LibraryConfig:
                     default=False,
                 )
             ]
-            package_install_answer = inquirer.prompt(package_install_question)
+            package_install_answer = prompt(package_install_question)
             config_data["package_install"] = package_install_answer["package_install"]
 
         # Headers are used straight from the repository, so ask where they live
@@ -269,7 +274,7 @@ def ask_library_questions() -> LibraryConfig:
                     default="include",
                 )
             ]
-            include_path_answer = inquirer.prompt(include_path_question)
+            include_path_answer = prompt(include_path_question)
             # LibraryConfig normalizes and validates the path
             if include_path_answer["include_path"] != "include":
                 config_data["include_path"] = include_path_answer["include_path"]
@@ -282,7 +287,7 @@ def ask_library_questions() -> LibraryConfig:
                 "is_header_only", message="Is this library header-only?", default=False
             )
         ]
-        header_only_answer = inquirer.prompt(header_only_question)
+        header_only_answer = prompt(header_only_question)
         config_data["is_header_only"] = header_only_answer["is_header_only"]
 
         if not header_only_answer["is_header_only"]:
@@ -294,7 +299,7 @@ def ask_library_questions() -> LibraryConfig:
                     choices=[tool.value for tool in BuildTool],
                 )
             ]
-            build_tool_answer = inquirer.prompt(build_tool_question)
+            build_tool_answer = prompt(build_tool_question)
             config_data["build_tool"] = BuildTool(build_tool_answer["build_tool"])
 
             # Question 6: Link type and binary names
@@ -305,7 +310,7 @@ def ask_library_questions() -> LibraryConfig:
                     choices=[link.value for link in LinkType],
                 )
             ]
-            link_type_answer = inquirer.prompt(link_type_question)
+            link_type_answer = prompt(link_type_question)
             config_data["link_type"] = LinkType(link_type_answer["link_type"])
 
             binary_names_question = [
@@ -315,7 +320,7 @@ def ask_library_questions() -> LibraryConfig:
                     validate=lambda _, x: len(x.strip()) > 0,
                 )
             ]
-            binary_names_answer = inquirer.prompt(binary_names_question)
+            binary_names_answer = prompt(binary_names_question)
             config_data["binary_names"] = [
                 name.strip() for name in binary_names_answer["binary_names"].split(",")
             ]
@@ -329,7 +334,7 @@ def ask_library_questions() -> LibraryConfig:
                     default=False,
                 )
             ]
-            is_c_library_answer = inquirer.prompt(is_c_library_question)
+            is_c_library_answer = prompt(is_c_library_question)
             config_data["is_c_library"] = is_c_library_answer["is_c_library"]
 
     # Create the config and normalize versions with git lookup
