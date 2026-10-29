@@ -12,6 +12,7 @@ from .build_tester import (
     run_fortran_build_test,
 )
 from .constants import FORTRAN_PROPERTIES_PATH, GITHUB_URL_REQUIRED, MAIN_REPO_PATH_REQUIRED
+from .file_modifications import insert_library_properties
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
@@ -148,23 +149,7 @@ class FortranHandler:
                 f"libs.{library_id}.versions.{version_key}.version={config.version}"
             )
 
-            # Find insertion point before tools section
-            tools_section_match = re.search(
-                r"\n(#{33}\n#{33}\n# Installed tools)",
-                content,
-            )
-
-            if tools_section_match:
-                insertion_point = tools_section_match.start()
-                new_content = (
-                    content[:insertion_point]
-                    + "\n"
-                    + "\n".join(library_props)
-                    + "\n\n"
-                    + content[insertion_point:]
-                )
-            else:
-                new_content = content + "\n\n" + "\n".join(library_props) + "\n"
+            new_content = insert_library_properties(content, library_props)
 
             with open(props_file, "w", encoding="utf-8") as f:
                 f.write(new_content)
