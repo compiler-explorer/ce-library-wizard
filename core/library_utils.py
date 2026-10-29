@@ -24,8 +24,19 @@ def clone_repository(github_url: str, clone_path: Path) -> bool:
         True if cloning succeeded, False otherwise
     """
     try:
+        # ce_install clones submodules too, and some libraries keep their headers in one
         result = run_command(
-            ["git", "clone", "--depth", "1", github_url, str(clone_path)], clean_env=False
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--recurse-submodules",
+                "--shallow-submodules",
+                github_url,
+                str(clone_path),
+            ],
+            clean_env=False,
         )
 
         if result.returncode != 0:
