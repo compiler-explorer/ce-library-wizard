@@ -4,7 +4,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from .models import LibraryType
+from .models import LibraryType, extract_github_repo_info
 from .subprocess_utils import run_ce_install_command, run_command, run_make_command
 
 logger = logging.getLogger(__name__)
@@ -354,16 +354,11 @@ def suggest_library_id_from_github_url(github_url: str) -> str:
     Returns:
         Suggested library ID following naming conventions
     """
-    # Extract repo name from URL
-    match = re.search(r"github\.com/[^/]+/([^/]+)", str(github_url))
-    if not match:
+    repo_info = extract_github_repo_info(str(github_url))
+    if not repo_info:
         return "unknown_library"
 
-    repo_name = match.group(1)
-
-    # Remove .git suffix if present
-    if repo_name.endswith(".git"):
-        repo_name = repo_name[:-4]
+    repo_name = repo_info[1]
 
     # Convert to lowercase and replace non-alphanumeric with underscores
     library_id = re.sub(r"[^a-z0-9]+", "_", repo_name.lower())
