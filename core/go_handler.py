@@ -8,7 +8,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-import yaml
+from ruamel.yaml import YAML
 
 from .build_tester import (
     BuildTestResult,
@@ -22,6 +22,25 @@ from .library_utils import (
 from .models import LibraryConfig
 
 logger = logging.getLogger(__name__)
+
+
+def round_trip_yaml() -> YAML:
+    """
+    A YAML loader/dumper that keeps libraries.yaml's comments, key order and quoting, so
+    adding a library only changes the lines it adds. Matches infra's LibraryYaml.
+    """
+    yaml = YAML(typ="rt")
+    yaml.preserve_quotes = True
+    yaml.width = 4096
+    yaml.indent(mapping=2, sequence=2, offset=0)
+    return yaml
+
+
+def insert_sorted(mapping, key: str, value) -> None:
+    """Add a new key to a libraries.yaml mapping, before the first key that sorts after it."""
+    entry = {k: value[k] for k in sorted(value)} if isinstance(value, dict) else value
+    position = next((i for i, existing in enumerate(mapping) if str(existing) > key), len(mapping))
+    mapping.insert(position, key, entry)
 
 
 def suggest_library_id_from_module(module_path: str) -> str:
@@ -144,10 +163,12 @@ def resolve_go_module(module_path: str, version: str) -> tuple[str, str | None]:
     if not version.startswith("v"):
         version = f"v{version}"
 
+    module_path = normalize_module_input(module_path)
+
     # First check if the given path is itself a valid module
     exists, _ = validate_go_module_version(module_path, version)
     if exists:
-        return module_path, None
+        return declared_module_path(module_path, version), None
 
     # Walk up the path to find the actual module
     original = module_path
@@ -159,13 +180,55 @@ def resolve_go_module(module_path: str, version: str) -> tuple[str, str | None]:
         candidate = "/".join(parts)
         exists, _ = validate_go_module_version(candidate, version)
         if exists:
+            declared = declared_module_path(candidate, version)
+            import_path = declared + original[len(candidate) :]
             logger.info(
-                f"Resolved module: {original} -> module={candidate}, " f"import_path={original}"
+                f"Resolved module: {original} -> module={declared}, " f"import_path={import_path}"
             )
-            return candidate, original
+            return declared, import_path
 
-    # Nothing found - return as-is and let downstream validation catch it
-    return module_path, None
+    raise ValueError(f"No Go module found for {original} at {version} on proxy.golang.org")
+
+
+def normalize_module_input(module_path: str) -> str:
+    """
+    Turn what a user is likely to paste (a repository URL) into a Go module path.
+
+    The golang.org/x repositories are hosted on go.googlesource.com, but their module
+    paths are golang.org/x/<name>.
+    """
+    path = module_path.strip()
+    path = re.sub(r"^[a-z]+://", "", path).rstrip("/")
+    path = re.sub(r"\.git$", "", path)
+    googlesource = re.match(r"^go\.googlesource\.com/([^/]+)(/.*)?$", path)
+    if googlesource:
+        path = f"golang.org/x/{googlesource.group(1)}{googlesource.group(2) or ''}"
+    return path
+
+
+def parse_module_directive(go_mod: str) -> str | None:
+    """Return the path from a go.mod file's `module` directive."""
+    match = re.search(r"^module\s+\"?([^\s\"]+)\"?", go_mod, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def declared_module_path(module_path: str, version: str) -> str:
+    """
+    Return the module path a module's go.mod declares, which can differ from the path the
+    proxy will serve it under: github.com/uber-go/zap is fetchable, but declares
+    go.uber.org/zap, and `go get` rejects the mismatch.
+    """
+    url = f"https://proxy.golang.org/{module_path}/@v/{version}.mod"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            declared = parse_module_directive(response.read().decode("utf-8"))
+    except Exception as e:
+        logger.debug(f"Could not read go.mod for {module_path}@{version}: {e}")
+        return module_path
+    if declared and declared != module_path:
+        logger.info(f"{module_path} declares its module path as {declared}")
+        return declared
+    return module_path
 
 
 def _pick_best_subpackage(module_path: str, subpackages: set[str]) -> str:
@@ -354,15 +417,16 @@ class GoHandler:
                 logger.error(f"libraries.yaml not found at {libraries_yaml_path}")
                 return None
 
+            yaml = round_trip_yaml()
             with open(libraries_yaml_path, encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+                data = yaml.load(f)
 
             if "libraries" not in data:
                 data["libraries"] = {}
 
             libraries = data["libraries"]
             if "go" not in libraries:
-                libraries["go"] = {}
+                insert_sorted(libraries, "go", {})
 
             go_libs = libraries["go"]
 
@@ -386,14 +450,14 @@ class GoHandler:
                 }
                 if config.import_path:
                     library_entry["import_path"] = config.import_path
-                go_libs[library_id] = library_entry
+                insert_sorted(go_libs, library_id, library_entry)
                 logger.info(
                     f"Added new Go library {library_id} ({config.module}) with version {version}"
                 )
 
             # Save updated libraries.yaml
             with open(libraries_yaml_path, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+                yaml.dump(data, f)
 
             return library_id
 
