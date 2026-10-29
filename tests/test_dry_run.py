@@ -94,7 +94,7 @@ FLOWS = [
     pytest.param(lambda **kw: cli_main.process_rust_library(MagicMock(), **kw), id="rust"),
     pytest.param(lambda **kw: cli_main.process_top_rust_crates(**kw), id="top-rust-crates"),
     pytest.param(lambda **kw: cli_main.process_fortran_library(MagicMock(), **kw), id="fortran"),
-    pytest.param(lambda **kw: cli_main.process_go_library(MagicMock(), **kw), id="go"),
+    pytest.param(lambda **kw: cli_main.process_go_library(MagicMock(module=None), **kw), id="go"),
 ]
 
 

@@ -24,6 +24,8 @@ from .models import LibraryConfig
 
 logger = logging.getLogger(__name__)
 
+GO_PROXY_URL = "https://proxy.golang.org"
+
 
 def round_trip_yaml() -> YAML:
     """
@@ -112,83 +114,13 @@ def module_to_github_url(module_path: str) -> str | None:
     return None
 
 
-def validate_go_module_version(module_path: str, version: str) -> tuple[bool, str | None]:
-    """
-    Validate that a Go module version exists using the Go module proxy.
-
-    Args:
-        module_path: Go module path (e.g., github.com/google/uuid)
-        version: Version string (e.g., v1.6.0)
-
-    Returns:
-        Tuple of (exists, error_message)
-    """
-    # Ensure version has 'v' prefix (Go convention)
-    if not version.startswith("v"):
-        version = f"v{version}"
-
-    # Check via Go module proxy
-    proxy_url = f"https://proxy.golang.org/{module_path}/@v/{version}.info"
-    try:
-        with urllib.request.urlopen(proxy_url, timeout=10) as response:
-            if response.status == 200:
-                return True, None
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return False, f"Version {version} not found for module {module_path}"
-        return False, f"Error checking module proxy: HTTP {e.code}"
-    except (urllib.error.URLError, TimeoutError) as e:
-        return False, f"Error connecting to Go module proxy: {e}"
-
-    return False, "Unknown error checking Go module proxy"
+class GoModuleResolutionError(ValueError):
+    """Raised when no module the Go proxy serves can be found for the given path."""
 
 
-def resolve_go_module(module_path: str, version: str) -> tuple[str, str | None]:
-    """
-    Resolve the actual Go module path, handling the case where a user
-    passes a subpackage path (e.g., google.golang.org/protobuf/proto)
-    instead of the module root (google.golang.org/protobuf).
-
-    Walks up the path, checking the Go module proxy at each level,
-    until it finds a valid module.
-
-    Args:
-        module_path: Possibly a subpackage path
-        version: Version to check against
-
-    Returns:
-        Tuple of (actual_module_path, import_path_or_none).
-        If the input was already the module root, import_path is None.
-        If the input was a subpackage, import_path is the original input.
-    """
-    if not version.startswith("v"):
-        version = f"v{version}"
-
-    module_path = normalize_module_input(module_path)
-
-    # First check if the given path is itself a valid module
-    exists, _ = validate_go_module_version(module_path, version)
-    if exists:
-        return declared_module_path(module_path, version), None
-
-    # Walk up the path to find the actual module
-    original = module_path
-    parts = module_path.split("/")
-
-    # Need at least 3 components for a valid module (host/owner/repo or host/path)
-    while len(parts) > 2:
-        parts = parts[:-1]
-        candidate = "/".join(parts)
-        exists, _ = validate_go_module_version(candidate, version)
-        if exists:
-            declared = declared_module_path(candidate, version)
-            import_path = declared + original[len(candidate) :]
-            logger.info(
-                f"Resolved module: {original} -> module={declared}, " f"import_path={import_path}"
-            )
-            return declared, import_path
-
-    raise ValueError(f"No Go module found for {original} at {version} on proxy.golang.org")
+def escape_module_path(module_path: str) -> str:
+    """Escape a module path for the Go proxy: each uppercase letter becomes '!' + lowercase."""
+    return re.sub(r"[A-Z]", lambda m: "!" + m.group(0).lower(), module_path)
 
 
 def normalize_module_input(module_path: str) -> str:
@@ -213,23 +145,90 @@ def parse_module_directive(go_mod: str) -> str | None:
     return match.group(1) if match else None
 
 
-def declared_module_path(module_path: str, version: str) -> str:
+def fetch_go_module_path(module_path: str, version: str) -> tuple[str | None, str | None]:
     """
-    Return the module path a module's go.mod declares, which can differ from the path the
-    proxy will serve it under: github.com/uber-go/zap is fetchable, but declares
-    go.uber.org/zap, and `go get` rejects the mismatch.
+    Fetch the .mod file the Go proxy serves for module_path@version and return
+    the module path it declares.
+
+    Returns:
+        Tuple of (declared_module_path, error_message); exactly one is None.
     """
-    url = f"https://proxy.golang.org/{module_path}/@v/{version}.mod"
+    if not version.startswith("v"):
+        version = f"v{version}"
+
+    proxy_url = f"{GO_PROXY_URL}/{escape_module_path(module_path)}/@v/{version}.mod"
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
-            declared = parse_module_directive(response.read().decode("utf-8"))
-    except Exception as e:
-        logger.debug(f"Could not read go.mod for {module_path}@{version}: {e}")
-        return module_path
-    if declared and declared != module_path:
-        logger.info(f"{module_path} declares its module path as {declared}")
-        return declared
-    return module_path
+        with urllib.request.urlopen(proxy_url, timeout=10) as response:
+            go_mod = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            return None, f"Go module proxy has no module {module_path} at version {version}"
+        return None, f"Error checking Go module proxy: HTTP {e.code}"
+    except (urllib.error.URLError, TimeoutError) as e:
+        return None, f"Error connecting to Go module proxy: {e}"
+
+    declared = parse_module_directive(go_mod)
+    if not declared:
+        return None, f"No module line in the go.mod served for {module_path}@{version}"
+    return declared, None
+
+
+def resolve_go_module(module_path: str, version: str) -> tuple[str, str | None]:
+    """
+    Resolve the real Go module path for what the user entered.
+
+    Handles a URL (https://github.com/google/uuid), a subpackage path
+    (google.golang.org/protobuf/proto) and a repository path whose go.mod declares
+    a different module (github.com/uber-go/zap declares go.uber.org/zap). Walks up
+    the path until the Go proxy serves a .mod file, then uses its `module` line.
+
+    Args:
+        module_path: Module path, subpackage path or URL as entered
+        version: Version to check against
+
+    Returns:
+        Tuple of (actual_module_path, import_path_or_none).
+        If the input was the module root, import_path is None.
+        If the input was a subpackage, import_path is that subpackage under the real module.
+
+    Raises:
+        GoModuleResolutionError: if no module is found, or the declared module
+        is not served by the proxy under its own path.
+    """
+    if not version.startswith("v"):
+        version = f"v{version}"
+
+    original = normalize_module_input(module_path)
+    parts = original.split("/")
+    first_error = None
+
+    # Need at least 2 components for a valid module (host/path)
+    while len(parts) >= 2:
+        candidate = "/".join(parts)
+        declared, error = fetch_go_module_path(candidate, version)
+        if declared:
+            break
+        first_error = first_error or error
+        parts = parts[:-1]
+    else:
+        raise GoModuleResolutionError(
+            f"{first_error}. Use the path from the `module` line of the library's go.mod."
+        )
+
+    if declared != candidate:
+        served, _ = fetch_go_module_path(declared, version)
+        if served != declared:
+            raise GoModuleResolutionError(
+                f"{candidate} declares its module path as {declared}, but the Go module "
+                f"proxy does not serve {declared} at version {version}"
+            )
+        logger.info(f"{candidate} declares its module path as {declared}")
+
+    subpackage = original[len(candidate) :]
+    import_path = f"{declared}{subpackage}" if subpackage else None
+    if declared != original:
+        logger.info(f"Resolved module: {original} -> module={declared}, import_path={import_path}")
+    return declared, import_path
 
 
 def _pick_best_subpackage(module_path: str, subpackages: set[str]) -> str:
@@ -273,7 +272,7 @@ def detect_import_path(module_path: str, version: str) -> str | None:
     if not version.startswith("v"):
         version = f"v{version}"
 
-    zip_url = f"https://proxy.golang.org/{module_path}/@v/{version}.zip"
+    zip_url = f"{GO_PROXY_URL}/{escape_module_path(module_path)}/@v/{version}.zip"
     logger.info(f"Checking module structure from {zip_url}")
 
     try:

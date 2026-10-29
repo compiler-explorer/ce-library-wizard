@@ -52,6 +52,7 @@ def test_normalize_module_input(given, expected):
     [
         ("module go.uber.org/zap\n\ngo 1.19\n", "go.uber.org/zap"),
         ('// comment\nmodule "example.com/quoted"\n', "example.com/quoted"),
+        ("module example.com/mod // trailing comment\n", "example.com/mod"),
         ("go 1.19\n", None),
     ],
 )
