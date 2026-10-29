@@ -24,8 +24,19 @@ def clone_repository(github_url: str, clone_path: Path) -> bool:
         True if cloning succeeded, False otherwise
     """
     try:
+        # ce_install clones submodules too, and some libraries keep their headers in one
         result = run_command(
-            ["git", "clone", "--depth", "1", github_url, str(clone_path)], clean_env=False
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--recurse-submodules",
+                "--shallow-submodules",
+                github_url,
+                str(clone_path),
+            ],
+            clean_env=False,
         )
 
         if result.returncode != 0:
@@ -581,8 +592,8 @@ def build_ce_install_command(
     else:
         logger.warning("No library type specified, using default behavior")
 
-    # Add target prefix if specified
-    if hasattr(config, "target_prefix") and config.target_prefix:
+    # A nightly library is installed at libs/<id>/<version>, without any prefix
+    if getattr(config, "target_prefix", None) and not config.get_nightly_method():
         subcommand.extend(["--target-prefix", config.target_prefix])
         logger.info(f"Adding target prefix: {config.target_prefix}")
 

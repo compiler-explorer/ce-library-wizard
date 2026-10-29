@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from .library_utils import HEADER_EXTENSIONS
+from .nightly import ENABLE_NIGHTLY_ARGS, NIGHTLY_SECTION
 from .subprocess_utils import run_ce_install_command
 
 logger = logging.getLogger(__name__)
@@ -395,6 +396,7 @@ def run_build_test(
     compiler_id: str | None = None,
     compiler_family: str = "gcc",
     debug: bool = False,
+    nightly: bool = False,
 ) -> BuildTestResult:
     """
     Test building a library using ce_install build command.
@@ -407,6 +409,7 @@ def run_build_test(
         compiler_id: Specific compiler ID to use (auto-detected if None)
         compiler_family: Compiler family to use if auto-detecting
         debug: Enable debug logging
+        nightly: Whether the library is in the nightly section of its language
 
     Returns:
         BuildTestResult with success status, message, and artifact information
@@ -427,13 +430,15 @@ def run_build_test(
             logger.info(f"Using compiler: {compiler}")
 
         # Construct the library spec
-        library_spec = f"libraries/{language}/{library_id} {version}"
+        section = f"{language}/{NIGHTLY_SECTION}" if nightly else language
+        library_spec = f"libraries/{section}/{library_id} {version}"
 
         # Build the command
         # bin/ce_install [--debug] --dry-run --dest <dir> --keep-staging
         # --force-traditional build --temp-install --buildfor <id> '<spec>'
         dest_path = str(infra_path.parent / "build-test")
         subcommand = [
+            *(ENABLE_NIGHTLY_ARGS if nightly else ()),
             "--dry-run",
             "--dest",
             dest_path,

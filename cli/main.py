@@ -80,6 +80,9 @@ def process_cpp_library(
         cpp_handler = CppHandler(infra_repo_path, main_repo_path, debug=debug)
 
         try:
+            nightly_method = config.get_nightly_method()
+            nightly = nightly_method is not None
+
             # Add library to libraries.yaml
             library_id = cpp_handler.add_library(config)
             if not library_id:
@@ -93,8 +96,15 @@ def process_cpp_library(
                 config.version,
                 str(config.github_url) if config.github_url else None,
                 config.include_path,
+                nightly=nightly,
             ):
                 click.echo("❌ Failed to generate C++ properties", err=True)
+                return False
+
+            if nightly_method and not cpp_handler.move_to_nightly(
+                library_id, config.version, nightly_method
+            ):
+                click.echo("❌ Failed to move the library to the nightly section", err=True)
                 return False
 
             click.echo("✓ Modified libraries.yaml and generated properties")
@@ -106,7 +116,9 @@ def process_cpp_library(
                     click.echo("\n⚠️  Install test is not supported on Windows")
                 else:
                     click.echo("\n🧪 Running install test...")
-                    if not cpp_handler.run_install_test(library_id, config.version):
+                    if not cpp_handler.run_install_test(
+                        library_id, config.version, nightly=nightly
+                    ):
                         click.echo("❌ Install test failed. Aborting.", err=True)
                         click.echo(INCLUDE_PATH_HINT, err=True)
                         return False
@@ -114,7 +126,7 @@ def process_cpp_library(
             else:
                 # Just check paths without installing
                 click.echo("\n🔍 Checking library paths...")
-                if not cpp_handler.check_library_paths(library_id, config.version):
+                if not cpp_handler.check_library_paths(library_id, config.version, nightly=nightly):
                     click.echo("❌ Path check failed. Aborting.", err=True)
                     return False
                 click.echo("✓ Path check passed")
@@ -140,7 +152,9 @@ def process_cpp_library(
                         # Auto mode: silently skip if no compiler
                     else:
                         click.echo(f"\n🔨 Running build test... ({msg})")
-                        build_result = cpp_handler.run_build_test(library_id, config.version)
+                        build_result = cpp_handler.run_build_test(
+                            library_id, config.version, nightly=nightly
+                        )
                         if not build_result.success:
                             click.echo("❌ Build test failed.", err=True)
                             if build_result.staging_dir:

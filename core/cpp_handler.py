@@ -6,12 +6,15 @@ import re
 from pathlib import Path
 
 from .build_tester import BuildTestResult, check_build_test_available, run_build_test
+from .constants import LIBRARIES_YAML_PATH
+from .libraries_yaml import round_trip_yaml
 from .library_paths import (
     CMAKE_NOT_HEADER_ONLY_NOTE,
     apply_include_path,
     find_invalid_installed_paths,
     get_version_paths,
     is_path_under,
+    override_install_root,
 )
 from .library_utils import (
     build_ce_install_command,
@@ -31,6 +34,7 @@ from .models import (
     check_existing_library_config,
     check_existing_library_config_remote,
 )
+from .nightly import ENABLE_NIGHTLY_ARGS, move_version_to_nightly, nightly_install_root
 from .subprocess_utils import run_ce_install_command
 
 logger = logging.getLogger(__name__)
@@ -247,6 +251,7 @@ class CppHandler:
         version: str,
         github_url: str | None = None,
         include_path: str | None = None,
+        nightly: bool = False,
     ) -> bool:
         """
         Generate C++ properties file from libraries.yaml.
@@ -257,6 +262,8 @@ class CppHandler:
             github_url: GitHub URL of the library (for supplementing properties)
             include_path: Header directory relative to the repository root, replacing
                 the default include/
+            nightly: Whether the version is installed as a nightly library, which
+                ignores any target_prefix of the library's releases
 
         Returns:
             True if successful, False otherwise
@@ -292,6 +299,16 @@ class CppHandler:
             # Supplement properties with fields from libraries.yaml
             supplement_properties_from_yaml(props_file, library_id, github_url, self.infra_path)
 
+            if nightly:
+                content, changed = override_install_root(
+                    props_file.read_text(encoding="utf-8"),
+                    library_id,
+                    version,
+                    nightly_install_root(library_id, version),
+                )
+                if changed:
+                    props_file.write_text(content, encoding="utf-8")
+
             if include_path:
                 apply_include_path(props_file, library_id, version, include_path)
 
@@ -312,6 +329,43 @@ class CppHandler:
         except Exception as e:
             logger.error(f"Error generating C++ properties: {e}")
             return False
+
+    def move_to_nightly(self, library_id: str, version: str, method: str) -> bool:
+        """
+        Move a version that cpp-library add wrote as a release into the c++ nightly section.
+
+        cpp-library add only writes releases, and generate-linux-props only reads them, so
+        this runs once the properties have been generated.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            libraries_yaml_path = self.infra_path / LIBRARIES_YAML_PATH
+            yaml = round_trip_yaml()
+            with open(libraries_yaml_path, encoding="utf-8") as f:
+                data = yaml.load(f)
+
+            cpp_libraries = data["libraries"]["c++"]
+            if library_id not in cpp_libraries:
+                logger.error(f"Library {library_id} not found in libraries.yaml")
+                return False
+
+            move_version_to_nightly(cpp_libraries, library_id, version, method)
+
+            with open(libraries_yaml_path, "w", encoding="utf-8") as f:
+                yaml.dump(data, f)
+
+            logger.info(f"Moved {library_id} {version} to the nightly libraries ({method})")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error moving {library_id} {version} to the nightly libraries: {e}")
+            return False
+
+    @staticmethod
+    def _enable_args(nightly: bool) -> tuple[str, ...]:
+        return ENABLE_NIGHTLY_ARGS if nightly else ()
 
     def validate_library_id(self, library_id: str) -> bool:
         """Instance method that calls the static method"""
@@ -350,13 +404,14 @@ class CppHandler:
         """
         return suggest_library_id_from_github_url(github_url)
 
-    def run_install_test(self, library_id: str, version: str) -> bool:
+    def run_install_test(self, library_id: str, version: str, nightly: bool = False) -> bool:
         """
         Test installing the library using ce_install.
 
         Args:
             library_id: The library identifier
             version: The library version
+            nightly: Whether the version is in the nightly section
 
         Returns:
             True if installation succeeds, False otherwise
@@ -378,7 +433,9 @@ class CppHandler:
             install_spec = f"{library_id} {version}"
 
             result = run_ce_install_command(
-                ["install", "--force", install_spec], cwd=self.infra_path, debug=self.debug
+                [*self._enable_args(nightly), "install", "--force", install_spec],
+                cwd=self.infra_path,
+                debug=self.debug,
             )
 
             if result.returncode != 0:
@@ -436,13 +493,14 @@ class CppHandler:
             logger.error(f"Error during install test: {e}")
             return False
 
-    def check_library_paths(self, library_id: str, version: str) -> bool:
+    def check_library_paths(self, library_id: str, version: str, nightly: bool = False) -> bool:
         """
         Check library paths using ce_install list-paths without installing.
 
         Args:
             library_id: The library identifier
             version: The library version
+            nightly: Whether the version is in the nightly section
 
         Returns:
             True if paths are consistent with properties, False otherwise
@@ -454,7 +512,9 @@ class CppHandler:
             install_spec = f"{library_id} {version}"
 
             result = run_ce_install_command(
-                ["list-paths", install_spec], cwd=self.infra_path, debug=self.debug
+                [*self._enable_args(nightly), "list-paths", install_spec],
+                cwd=self.infra_path,
+                debug=self.debug,
             )
 
             if result.returncode != 0:
@@ -566,6 +626,7 @@ class CppHandler:
         version: str,
         compiler_id: str | None = None,
         compiler_family: str = "gcc",
+        nightly: bool = False,
     ) -> BuildTestResult:
         """
         Test building the library using ce_install build command.
@@ -577,6 +638,7 @@ class CppHandler:
             version: The library version
             compiler_id: Specific compiler ID to use (auto-detected if None)
             compiler_family: Compiler family to use if auto-detecting
+            nightly: Whether the version is in the nightly section
 
         Returns:
             BuildTestResult with success status, message, and artifact information
@@ -589,6 +651,7 @@ class CppHandler:
             compiler_id=compiler_id,
             compiler_family=compiler_family,
             debug=self.debug,
+            nightly=nightly,
         )
 
         if result.success:

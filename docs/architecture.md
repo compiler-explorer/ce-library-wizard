@@ -75,6 +75,7 @@ Each supported language has its own handler class:
 - Detects library type (header-only, packaged-headers, static, shared, cshared)
 - Checks existing configuration in libraries.yaml (local and remote)
 - Performs git tag lookup to determine version format and target_prefix
+- Turns branch versions (`trunk`, `main`, ...) into nightly entries in libraries.yaml
 - Automatically detects CMake targets for static/shared libraries
 - Runs `ce_install cpp-library add` with appropriate flags
 - Supports `--package-install` flag for CMake header configuration
