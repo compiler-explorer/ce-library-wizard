@@ -56,7 +56,7 @@ def process_cpp_library(
     """Process a C++ library addition"""
     click.echo(f"\nProcessing C++ library: {config.library_id} v{config.version}")
 
-    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
@@ -285,7 +285,7 @@ def process_rust_library(
     """Process a Rust library addition"""
     click.echo(f"\nProcessing Rust crate: {config.name} v{config.version}")
 
-    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
@@ -435,7 +435,7 @@ def process_c_library(
     """Process a C library addition"""
     click.echo(f"\nProcessing C library: {config.library_id} v{config.version}")
 
-    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
@@ -654,7 +654,7 @@ def process_top_rust_crates(
         click.echo("Operation cancelled.")
         return
 
-    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
@@ -811,7 +811,7 @@ def process_fortran_library(
     """Process a Fortran library addition"""
     click.echo(f"\nProcessing Fortran library: {config.library_id or 'unknown'} v{config.version}")
 
-    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
@@ -988,7 +988,7 @@ def process_go_library(
         f"\nProcessing Go module: {config.module} ({config.library_id or 'auto'}) {config.version}"
     )
 
-    with GitManager(github_token, debug=debug, keep_temp=keep_temp) as git_mgr:
+    with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
 
