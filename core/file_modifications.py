@@ -6,6 +6,8 @@ from typing import Any
 
 from core.models import LibraryConfig
 
+INSTALLED_TOOLS_PATTERN = re.compile(r"^#{33}\n#{33}\n# Installed tools", re.MULTILINE)
+
 
 def generate_library_entry(config: LibraryConfig) -> dict[str, Any]:
     """Generate the library configuration entry for compiler-explorer"""
@@ -84,3 +86,15 @@ def update_rust_properties(repo_path: Path, new_props_content: str):
     rust_props_path.write_text(new_content)
 
     return rust_props_path
+
+
+def insert_library_properties(content: str, library_props: list[str]) -> str:
+    """Insert a new library block before the '# Installed tools' section, or at the end of
+    the file if there is none, leaving exactly one blank line on each side of the block."""
+    block = "\n".join(library_props) + "\n"
+    tools_match = INSTALLED_TOOLS_PATTERN.search(content)
+    if tools_match:
+        before = content[: tools_match.start()].rstrip("\n")
+        return before + "\n\n" + block + "\n" + content[tools_match.start() :]
+    before = content.rstrip("\n")
+    return before + "\n\n" + block if before else block

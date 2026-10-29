@@ -16,6 +16,7 @@ from .build_tester import (
     run_go_build_test,
 )
 from .constants import GO_PROPERTIES_PATH, LIBRARIES_YAML_PATH, MAIN_REPO_PATH_REQUIRED
+from .file_modifications import insert_library_properties
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
@@ -547,28 +548,7 @@ class GoHandler:
                     else:
                         logger.info(f"Version {version_key} already exists in properties")
             else:
-                # New library - add properties
-                # Find insertion point - append at end of file
-                # Look for tools section delimiter
-                tools_section_match = re.search(
-                    r"\n(#{33}\n#{33}\n# Installed tools)",
-                    content,
-                )
-
-                if tools_section_match:
-                    insertion_point = tools_section_match.start()
-                    content = (
-                        content[:insertion_point]
-                        + "\n"
-                        + "\n".join(library_props)
-                        + "\n\n"
-                        + content[insertion_point:]
-                    )
-                else:
-                    # Just append at end
-                    if not content.endswith("\n"):
-                        content += "\n"
-                    content += "\n" + "\n".join(library_props) + "\n"
+                content = insert_library_properties(content, library_props)
 
             with open(props_file, "w", encoding="utf-8") as f:
                 f.write(content)
