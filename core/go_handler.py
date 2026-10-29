@@ -114,6 +114,64 @@ def module_to_github_url(module_path: str) -> str | None:
     return None
 
 
+def parse_go_get_meta(html: str, module_path: str) -> str | None:
+    """
+    Pick the repository web page from a `?go-get=1` page's go-source and go-import meta tags.
+
+    go-source's home URL is preferred, as it is the browsable page: for google.golang.org/protobuf,
+    go-import points at go.googlesource.com but go-source at github.com/protocolbuffers/protobuf-go.
+    Only tags whose import prefix covers module_path are used.
+    """
+
+    def covers(prefix: str) -> bool:
+        return module_path == prefix or module_path.startswith(f"{prefix}/")
+
+    tags: dict[str, list[list[str]]] = {"go-source": [], "go-import": []}
+    for tag in re.findall(r"<meta\s[^>]*>", html, re.IGNORECASE):
+        name = re.search(r"""name\s*=\s*["']([^"']+)["']""", tag, re.IGNORECASE)
+        content = re.search(r"""content\s*=\s*["']([^"']+)["']""", tag, re.IGNORECASE)
+        if name and content and name.group(1) in tags:
+            fields = content.group(1).split()
+            if len(fields) >= 2 and covers(fields[0]):
+                tags[name.group(1)].append(fields)
+
+    for fields in tags["go-source"]:
+        if fields[1].startswith(("https://", "http://")):
+            return fields[1].rstrip("/")
+    for fields in tags["go-import"]:
+        if (
+            len(fields) >= 3
+            and fields[1] != "mod"
+            and fields[2].startswith(("https://", "http://"))
+        ):
+            return re.sub(r"\.git$", "", fields[2].rstrip("/"))
+    return None
+
+
+def module_repo_url(module_path: str) -> str | None:
+    """
+    The web page of a Go module's repository, for the properties `url=`.
+
+    github.com modules are derived from the path. Others are looked up the way `go get` does,
+    from the meta tags at https://<module>?go-get=1 (go.uber.org/zap -> github.com/uber-go/zap).
+    """
+    github_url = module_to_github_url(module_path)
+    if github_url:
+        return github_url
+
+    try:
+        with urllib.request.urlopen(f"https://{module_path}?go-get=1", timeout=10) as response:
+            html = response.read().decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError) as e:
+        logger.warning(f"Could not look up the repository of {module_path}: {e}")
+        return None
+
+    url = parse_go_get_meta(html, module_path)
+    if not url:
+        logger.warning(f"No repository URL found for {module_path}; leaving url= out")
+    return url
+
+
 class GoModuleResolutionError(ValueError):
     """Raised when the Go module, or the package to build from it, cannot be resolved."""
 
@@ -539,14 +597,13 @@ class GoHandler:
 
             name = display_name_from_module(config.module) if config.module else library_id
 
-            # Derive GitHub URL from module path
-            github_url = module_to_github_url(config.module) if config.module else None
+            repo_url = module_repo_url(config.module) if config.module else None
 
             # Build library properties
             library_props = []
             library_props.append(f"libs.{library_id}.name={name}")
-            if github_url:
-                library_props.append(f"libs.{library_id}.url={github_url}")
+            if repo_url:
+                library_props.append(f"libs.{library_id}.url={repo_url}")
             library_props.append(f"libs.{library_id}.lookupname={lookupname}")
             library_props.append(f"libs.{library_id}.packagedheaders=true")
             library_props.append(f"libs.{library_id}.versions={version_key}")
