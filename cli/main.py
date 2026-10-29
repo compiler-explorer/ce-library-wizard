@@ -13,7 +13,12 @@ from core.file_modifications import update_rust_properties
 from core.fortran_handler import FortranHandler
 from core.git_operations import GitManager
 from core.github_auth import get_github_token_via_gh_cli, get_github_token_via_oauth
-from core.go_handler import GoHandler, detect_import_path, resolve_go_module
+from core.go_handler import (
+    GoHandler,
+    GoModuleResolutionError,
+    detect_import_path,
+    resolve_go_module,
+)
 from core.library_paths import check_header_layout
 from core.library_utils import (
     clone_and_analyze_repository,
@@ -988,6 +993,21 @@ def process_go_library(
         f"\nProcessing Go module: {config.module} ({config.library_id or 'auto'}) {config.version}"
     )
 
+    if config.module:
+        click.echo("Resolving module path...")
+        try:
+            resolved_module, resolved_import = resolve_go_module(
+                config.module, config.get_primary_version()
+            )
+        except GoModuleResolutionError as e:
+            click.echo(f"Error: {e}", err=True)
+            return
+        if resolved_module != config.module:
+            click.echo(f"Using module path {resolved_module} (entered: {config.module})")
+            config.import_path = config.import_path or resolved_import
+            config.module = resolved_module
+            config.library_id = GoHandler.suggest_library_id_static(resolved_module)
+
     with GitManager(github_token, debug=debug, keep_temp=keep_temp, dry_run=dry_run) as git_mgr:
         click.echo("Cloning repositories...")
         main_repo_path, infra_repo_path = git_mgr.clone_repositories()
@@ -1003,25 +1023,14 @@ def process_go_library(
         go_handler = GoHandler(infra_repo_path, main_repo_path, debug=debug)
 
         try:
-            if config.module:
-                click.echo("Resolving module path...")
-                resolved_module, resolved_import = resolve_go_module(
-                    config.module, config.get_primary_version()
-                )
-                if resolved_module != config.module:
-                    click.echo(f"Resolved subpackage path to module: {resolved_module}")
-                    config.import_path = config.import_path or resolved_import
-                    config.module = resolved_module
-                    config.library_id = GoHandler.suggest_library_id_static(resolved_module)
-
-                if not config.import_path:
-                    click.echo("Checking module structure...")
-                    detected = detect_import_path(config.module, config.get_primary_version())
-                    if detected:
-                        click.echo(f"Root package not importable, using: {detected}")
-                        config.import_path = detected
-                    else:
-                        click.echo("Root package is importable")
+            if config.module and not config.import_path:
+                click.echo("Checking module structure...")
+                detected = detect_import_path(config.module, config.get_primary_version())
+                if detected:
+                    click.echo(f"Root package not importable, using: {detected}")
+                    config.import_path = detected
+                else:
+                    click.echo("Root package is importable")
 
             library_id = go_handler.add_library(config)
             if not library_id:

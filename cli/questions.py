@@ -72,12 +72,12 @@ def ask_library_questions() -> LibraryConfig:
         version_str = go_version_answer["version"]
         first_version = version_str.split(",")[0].strip()
 
-        # Resolve module path (handles subpackage paths)
         print("\nResolving module path...")
         resolved_module, resolved_import = resolve_go_module(module_path, first_version)
         if resolved_module != module_path:
-            print(f"Resolved subpackage to module: {resolved_module}")
-            print(f"  import path: {resolved_import}")
+            print(f"Using module path {resolved_module} (entered: {module_path})")
+            if resolved_import:
+                print(f"  import path: {resolved_import}")
             module_path = resolved_module
 
         suggested_id = GoHandler.suggest_library_id_static(module_path)
