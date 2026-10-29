@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 import urllib.request
@@ -39,21 +40,31 @@ class LibraryType(str, Enum):
     CSHARED = "cshared"
 
 
+def normalize_github_url(url: str) -> str:
+    """
+    Turn a pasted repository address into the canonical form used in libraries.yaml and
+    the properties url=: https://github.com/<owner>/<repo>, without a trailing / or .git.
+
+    Non-GitHub URLs only lose the trailing / and .git.
+    """
+    url = url.strip()
+    while True:
+        stripped = url.rstrip("/").removesuffix(".git")
+        if stripped == url:
+            break
+        url = stripped
+    return re.sub(r"^(?:https?://)?(?:www\.)?github\.com/", "https://github.com/", url)
+
+
 def extract_github_repo_info(github_url: str) -> tuple[str, str] | None:
     """Extract owner and repo name from GitHub URL"""
     if not github_url:
         return None
 
-    # Handle various GitHub URL formats
-    url = github_url.rstrip("/")
-    if url.startswith("https://github.com/"):
-        path = url[len("https://github.com/") :]
-    elif url.startswith("http://github.com/"):
-        path = url[len("http://github.com/") :]
-    elif url.startswith("github.com/"):
-        path = url[len("github.com/") :]
-    else:
+    url = normalize_github_url(github_url)
+    if not url.startswith("https://github.com/"):
         return None
+    path = url[len("https://github.com/") :]
 
     parts = path.split("/")
     if len(parts) >= 2:
@@ -305,6 +316,12 @@ class LibraryConfig(BaseModel):
         if v.startswith("~") or ".." in v.split("/"):
             raise ValueError("Include path must be relative to the repository root")
         return v
+
+    @field_validator("github_url", mode="before")
+    @classmethod
+    def validate_github_url(cls, v):
+        """Every handler and the generated properties get the same canonical URL"""
+        return normalize_github_url(str(v)) if v is not None else v
 
     @field_validator("version")
     @classmethod

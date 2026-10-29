@@ -12,7 +12,14 @@ from core.go_handler import (
     resolve_go_module,
 )
 from core.library_utils import filter_main_cmake_targets
-from core.models import BuildTool, Language, LibraryConfig, LibraryType, LinkType
+from core.models import (
+    BuildTool,
+    Language,
+    LibraryConfig,
+    LibraryType,
+    LinkType,
+    normalize_github_url,
+)
 
 
 def prompt(questions: list) -> dict:
@@ -156,10 +163,11 @@ def ask_library_questions() -> LibraryConfig:
         inquirer.Text(
             "github_url",
             message="What's the GitHub address of the library?",
-            validate=lambda _, x: x.startswith("https://github.com/"),
+            validate=lambda _, x: normalize_github_url(x).startswith("https://github.com/"),
         )
     ]
     github_answer = prompt(github_question)
+    github_answer["github_url"] = normalize_github_url(github_answer["github_url"])
 
     # Question 3: Version
     version_question = [

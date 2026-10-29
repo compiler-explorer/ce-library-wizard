@@ -28,7 +28,7 @@ from core.library_utils import (
     detect_library_type_from_analysis,
     validate_cmake_targets_for_type,
 )
-from core.models import Language, LibraryConfig, LibraryType
+from core.models import Language, LibraryConfig, LibraryType, normalize_github_url
 from core.rust_handler import RustLibraryHandler
 from core.subprocess_utils import run_ce_install_command
 from core.ui_utils import (
@@ -1401,6 +1401,7 @@ def main(
                 config.library_id = GoHandler.suggest_library_id_static(lib)
             else:
                 # For non-Rust/Go, lib should be a GitHub URL
+                lib = normalize_github_url(lib)
                 config = LibraryConfig(
                     language=language, github_url=lib, version=ver, include_path=include_path
                 )
