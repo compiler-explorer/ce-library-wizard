@@ -9,6 +9,8 @@ from .subprocess_utils import run_ce_install_command, run_command, run_make_comm
 
 logger = logging.getLogger(__name__)
 
+HEADER_EXTENSIONS = (".h", ".hpp", ".hxx", ".hh")
+
 
 def clone_repository(github_url: str, clone_path: Path) -> bool:
     """
@@ -52,7 +54,8 @@ def analyze_repository_structure(clone_path: Path) -> dict:
             'main_targets': list[str] | None,
             'library_artifacts': list[str],  # e.g. ["libminiz.a"]
             'has_generated_headers': bool,
-            'check_file': str | None  # e.g. "include/named/named.hpp"
+            'check_file': str | None,  # e.g. "include/named/named.hpp"
+            'has_include_dir': bool  # headers found under include/
         }
     """
     analysis = {
@@ -62,6 +65,7 @@ def analyze_repository_structure(clone_path: Path) -> dict:
         "library_artifacts": [],
         "has_generated_headers": False,
         "check_file": None,
+        "has_include_dir": False,
     }
 
     try:
@@ -89,6 +93,8 @@ def analyze_repository_structure(clone_path: Path) -> dict:
         analysis["check_file"] = detect_check_file(clone_path)
         if analysis["check_file"]:
             logger.info(f"Detected check_file: {analysis['check_file']}")
+        # detect_check_file prefers a header under include/, so this tells us whether one exists
+        analysis["has_include_dir"] = (analysis["check_file"] or "").startswith("include/")
 
         return analysis
 
@@ -110,13 +116,11 @@ def detect_check_file(clone_path: Path) -> str | None:
     Returns:
         Relative path to a suitable check_file, or None
     """
-    header_exts = (".h", ".hpp", ".hxx", ".hh")
-
     # Look for header files under include/
     include_dir = clone_path / "include"
     if include_dir.is_dir():
         for header in sorted(include_dir.rglob("*")):
-            if header.is_file() and header.suffix in header_exts:
+            if header.is_file() and header.suffix in HEADER_EXTENSIONS:
                 return str(header.relative_to(clone_path))
 
     # Fall back to any README variant in the repo root
@@ -256,9 +260,8 @@ def has_generated_headers(clone_path: Path, build_path: Path) -> bool:
     the build tree. If present, the library needs packaged-headers type
     so cmake --install places them in the include directory.
     """
-    header_exts = (".h", ".hpp", ".hxx", ".hh")
     for header in build_path.rglob("*"):
-        if header.is_file() and header.suffix in header_exts:
+        if header.is_file() and header.suffix in HEADER_EXTENSIONS:
             # Ignore CMake's own internal headers
             if "CMakeFiles" in header.parts:
                 continue

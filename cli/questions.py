@@ -232,6 +232,24 @@ def ask_library_questions() -> LibraryConfig:
             package_install_answer = inquirer.prompt(package_install_question)
             config_data["package_install"] = package_install_answer["package_install"]
 
+        # Headers are used straight from the repository, so ask where they live
+        if not config_data.get("package_install"):
+            if not (check_file or "").startswith("include/"):
+                print("⚠️  No include/ directory with headers found in the repository.")
+            include_path_question = [
+                inquirer.Text(
+                    "include_path",
+                    message=(
+                        "Header directory relative to the repository root " "('.' for the root)"
+                    ),
+                    default="include",
+                )
+            ]
+            include_path_answer = inquirer.prompt(include_path_question)
+            # LibraryConfig normalizes and validates the path
+            if include_path_answer["include_path"] != "include":
+                config_data["include_path"] = include_path_answer["include_path"]
+
     # C/C++ specific questions
     elif language in [Language.C, Language.CPP]:
         # Question 4: Header-only?
