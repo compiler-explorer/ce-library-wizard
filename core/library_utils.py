@@ -592,8 +592,8 @@ def build_ce_install_command(
     else:
         logger.warning("No library type specified, using default behavior")
 
-    # Add target prefix if specified
-    if hasattr(config, "target_prefix") and config.target_prefix:
+    # A nightly library is installed at libs/<id>/<version>, without any prefix
+    if getattr(config, "target_prefix", None) and not config.get_nightly_method():
         subcommand.extend(["--target-prefix", config.target_prefix])
         logger.info(f"Adding target prefix: {config.target_prefix}")
 

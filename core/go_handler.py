@@ -8,8 +8,6 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from ruamel.yaml import YAML
-
 from .build_tester import (
     BuildTestResult,
     check_go_build_test_available,
@@ -17,6 +15,7 @@ from .build_tester import (
 )
 from .constants import GO_PROPERTIES_PATH, LIBRARIES_YAML_PATH, MAIN_REPO_PATH_REQUIRED
 from .file_modifications import add_version_to_existing_library, insert_library_properties
+from .libraries_yaml import insert_sorted, round_trip_yaml
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
@@ -25,25 +24,6 @@ from .models import LibraryConfig
 logger = logging.getLogger(__name__)
 
 GO_PROXY_URL = "https://proxy.golang.org"
-
-
-def round_trip_yaml() -> YAML:
-    """
-    A YAML loader/dumper that keeps libraries.yaml's comments, key order and quoting, so
-    adding a library only changes the lines it adds. Matches infra's LibraryYaml.
-    """
-    yaml = YAML(typ="rt")
-    yaml.preserve_quotes = True
-    yaml.width = 4096
-    yaml.indent(mapping=2, sequence=2, offset=0)
-    return yaml
-
-
-def insert_sorted(mapping, key: str, value) -> None:
-    """Add a new key to a libraries.yaml mapping, before the first key that sorts after it."""
-    entry = {k: value[k] for k in sorted(value)} if isinstance(value, dict) else value
-    position = next((i for i, existing in enumerate(mapping) if str(existing) > key), len(mapping))
-    mapping.insert(position, key, entry)
 
 
 def suggest_library_id_from_module(module_path: str) -> str:

@@ -7,8 +7,9 @@ from enum import Enum
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, HttpUrl, field_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
+from .nightly import nightly_method_for_version
 from .subprocess_utils import run_command
 
 
@@ -106,6 +107,30 @@ def check_git_tag_exists(repo_url: str, tag: str) -> bool:
         return result.returncode == 0 and result.stdout.strip() != ""
     except (subprocess.TimeoutExpired, subprocess.SubprocessError):
         return False
+
+
+def list_remote_refs(repo_url: str) -> tuple[set[str], set[str]]:
+    """Get the branch and tag names of a remote repository, both empty if it can't be listed"""
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--heads", "--tags", repo_url],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+        return set(), set()
+    if result.returncode != 0:
+        return set(), set()
+
+    branches, tags = set(), set()
+    for line in result.stdout.splitlines():
+        _, _, ref = line.partition("\t")
+        if ref.startswith("refs/heads/"):
+            branches.add(ref.removeprefix("refs/heads/"))
+        elif ref.startswith("refs/tags/"):
+            tags.add(ref.removeprefix("refs/tags/").removesuffix("^{}"))
+    return branches, tags
 
 
 def check_git_tag_with_fallback(repo_url: str, tag: str) -> bool:
@@ -267,6 +292,8 @@ class LibraryConfig(BaseModel):
     import_path: str | None = None  # Go import path override (when root package isn't importable)
     check_file: str | None = None  # File to verify successful clone (e.g. "include/foo.h")
     include_path: str | None = None  # Header directory relative to repo root ("." for root)
+    # C++ versions that track a branch, mapped to their nightly install method
+    nightly_methods: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("include_path")
     @classmethod
@@ -315,7 +342,21 @@ class LibraryConfig(BaseModel):
         target_prefix = None
         missing_versions = []
 
+        branches, tags = set(), set()
+        if self.language == Language.CPP:
+            branches, tags = list_remote_refs(str(self.github_url))
+
         for version in versions:
+            method = (
+                nightly_method_for_version(version, branches, tags)
+                if self.language == Language.CPP
+                else None
+            )
+            if method:
+                normalized_versions.append(version)
+                self.nightly_methods[version] = method
+                continue
+
             normalized_version, prefix, exists = determine_version_format(
                 str(self.github_url), version
             )
@@ -365,6 +406,9 @@ class LibraryConfig(BaseModel):
         if self.target_prefix:
             print(f"✓ Detected version format requires target_prefix: {self.target_prefix}")
 
+        for version, method in self.nightly_methods.items():
+            print(f"✓ {version} tracks a branch: it will be a nightly library ({method})")
+
     def get_versions(self) -> list[str]:
         """Get list of versions, handling both single and multiple version cases"""
         if isinstance(self.version, str):
@@ -375,6 +419,10 @@ class LibraryConfig(BaseModel):
         """Get the primary (first) version for operations that need a single version"""
         versions = self.get_versions()
         return versions[0]
+
+    def get_nightly_method(self) -> str | None:
+        """Get the nightly install method of the primary version, None if it is a release"""
+        return self.nightly_methods.get(self.get_primary_version())
 
     def is_multi_version(self) -> bool:
         """Check if this config has multiple versions"""

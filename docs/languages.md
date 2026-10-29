@@ -75,6 +75,15 @@ C++ support includes automatic library type detection and comprehensive property
    - Linux properties with `generate-linux-props`
    - Windows properties with `generate-windows-props`
 
+### Branch Versions
+A version that tracks a branch instead of a release becomes a nightly library, which `ce_install`
+reinstalls whenever the branch moves. It goes in the `nightly` section of `libraries.yaml`:
+- `trunk` or `nightly`: the repository's default branch (`method: nightlyclone`)
+- the name of a branch that is not also a tag, e.g. `main` or `develop`: that branch (`method: nightlybranch`)
+
+Header-only libraries get `build_type: none`. The library is installed at
+`/opt/compiler-explorer/libs/<id>/<version>`, without any `target_prefix` of its releases.
+
 ### Installation Testing
 The `--install-test` flag validates that the library can be installed:
 ```bash
@@ -92,6 +101,9 @@ Requirements:
 
 # Multiple versions
 ./run.sh --lang=c++ --lib=https://github.com/nlohmann/json --ver=3.11.1,3.11.2,3.11.3
+
+# Nightly version tracking the default branch
+./run.sh --lang=c++ --lib=https://github.com/ryanhaining/cppitertools --ver=trunk --type=header-only
 
 # With installation test
 ./run.sh --lang=c++ --lib=https://github.com/fmtlib/fmt --ver=10.2.1 --install-test

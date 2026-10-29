@@ -95,6 +95,29 @@ def override_include_path(
     return props_content, changed
 
 
+def override_install_root(
+    props_content: str, library_id: str, version: str, install_root: str
+) -> tuple[str, int]:
+    """
+    Point the generated {destination}/include path of a library version at another
+    destination, keeping the include/ suffix for override_include_path to replace.
+
+    Returns:
+        Tuple of (new content, number of path properties changed)
+    """
+    prefix = re.escape(f"libs.{library_id}.versions.")
+    root = install_root.rstrip("/")
+
+    changed = 0
+    for vid in _matching_version_ids(props_content, library_id, version):
+        path_pattern = re.compile(rf"^({prefix}{re.escape(vid)}\.path=).*/include$", re.MULTILINE)
+        props_content, count = path_pattern.subn(
+            lambda match: f"{match.group(1)}{root}/include", props_content
+        )
+        changed += count
+    return props_content, changed
+
+
 def apply_include_path(props_file: Path, library_id: str, version: str, include_path: str) -> bool:
     """
     Apply a custom include path to a properties file.
