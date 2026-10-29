@@ -49,6 +49,33 @@ def suggest_library_id_from_module(module_path: str) -> str:
     return name
 
 
+def display_name_from_module(module_path: str) -> str:
+    """
+    Derive a properties display name from a Go module path.
+
+    Takes the last two path components, dropping the first of them when it is a
+    domain, and ignores a trailing major-version component.
+
+    Examples:
+        github.com/google/uuid -> google/uuid
+        google.golang.org/protobuf -> protobuf
+        golang.org/x/sys -> x/sys
+        github.com/go-yaml/yaml/v3 -> go-yaml/yaml
+        gopkg.in/yaml.v3 -> yaml.v3
+    """
+    path = module_path.split("://", 1)[-1]
+    parts = [part for part in path.split("/") if part]
+    if len(parts) > 1 and re.fullmatch(r"v\d+", parts[-1]):
+        parts = parts[:-1]
+    if not parts:
+        return module_path
+
+    tail = parts[-2:]
+    if len(tail) == 2 and "." in tail[0]:
+        tail = tail[1:]
+    return "/".join(tail)
+
+
 def module_to_github_url(module_path: str) -> str | None:
     """
     Derive a GitHub URL from a Go module path if possible.
@@ -401,16 +428,7 @@ class GoHandler:
             version_key = version_to_key(version)
             lookupname = f"go_{library_id}"
 
-            # Derive display name from module path
-            if config.module:
-                # Use the last two components for name (e.g., google/uuid, pkg/errors)
-                parts = config.module.rstrip("/").split("/")
-                if len(parts) >= 2:
-                    name = "/".join(parts[-2:])
-                else:
-                    name = parts[-1]
-            else:
-                name = library_id
+            name = display_name_from_module(config.module) if config.module else library_id
 
             # Derive GitHub URL from module path
             github_url = module_to_github_url(config.module) if config.module else None
