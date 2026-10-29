@@ -21,10 +21,15 @@ class GitManager:
     CE_INFRA_REPO = "compiler-explorer/infra"
 
     def __init__(
-        self, github_token: str | None = None, debug: bool = False, keep_temp: bool = False
+        self,
+        github_token: str | None = None,
+        debug: bool = False,
+        keep_temp: bool = False,
+        dry_run: bool = False,
     ):
         self.github_token = github_token
         self.debug = debug
+        self.dry_run = dry_run
         self.keep_temp = keep_temp
         self.temp_dir = None
         self.main_repo_path = None
@@ -50,6 +55,15 @@ class GitManager:
                 except Exception:  # noqa: S110
                     pass  # Best effort cleanup
 
+    @property
+    def uses_forks(self) -> bool:
+        """Whether to clone, sync and push via the user's forks, which a dry run never does"""
+        return bool(self.github_token) and not self.dry_run
+
+    def _ensure_not_dry_run(self, action: str):
+        if self.dry_run:
+            raise RuntimeError(f"Refusing to {action} in dry-run mode")
+
     def _run_git_command(self, cmd: list, cwd: str | None = None):
         """Run a git command and return the result"""
         working_dir = cwd or self.temp_dir
@@ -57,6 +71,7 @@ class GitManager:
 
     def _ensure_fork_exists(self, original_repo: str) -> str:
         """Ensure user has a fork of the repository, create if needed"""
+        self._ensure_not_dry_run("fork repositories")
         if not self.github_client:
             raise ValueError("GitHub token required for forking repositories")
 
@@ -80,7 +95,7 @@ class GitManager:
             return fork.full_name
 
     def clone_repositories(self) -> tuple[Path, Path]:
-        """Clone both compiler-explorer repositories (from user's forks if using token)"""
+        """Clone both compiler-explorer repositories (from forks if using token, unless dry run)"""
         self.main_repo_path = Path(self.temp_dir) / "compiler-explorer"
         self.infra_repo_path = Path(self.temp_dir) / "infra"
 
@@ -91,7 +106,7 @@ class GitManager:
             shutil.rmtree(self.infra_repo_path)
 
         # Determine which repos to clone
-        if self.github_token:
+        if self.uses_forks:
             # Ensure forks exist and clone from user's forks
             self.user_main_repo = self._ensure_fork_exists(self.CE_MAIN_REPO)
             self.user_infra_repo = self._ensure_fork_exists(self.CE_INFRA_REPO)
@@ -99,7 +114,7 @@ class GitManager:
             main_clone_url = f"https://github.com/{self.user_main_repo}.git"
             infra_clone_url = f"https://github.com/{self.user_infra_repo}.git"
         else:
-            # No token, clone from original repos (won't be able to push)
+            # No token or dry run, clone from original repos (won't be able to push)
             main_clone_url = f"https://github.com/{self.CE_MAIN_REPO}.git"
             infra_clone_url = f"https://github.com/{self.CE_INFRA_REPO}.git"
 
@@ -112,7 +127,7 @@ class GitManager:
         # C++ library commands are now available in main branch
 
         # Add upstream remotes if we're using forks
-        if self.github_token:
+        if self.uses_forks:
             # Add upstream remote for main repo
             self._run_git_command(
                 ["git", "remote", "add", "upstream", f"https://github.com/{self.CE_MAIN_REPO}.git"],
@@ -135,8 +150,8 @@ class GitManager:
 
     def create_branch(self, repo_path: Path, branch_name: str):
         """Create a new branch in the given repository, syncing with upstream and origin first"""
-        # If we have a GitHub token (meaning we're using forks), sync everything first
-        if self.github_token:
+        # If we're using forks, sync everything first
+        if self.uses_forks:
             try:
                 print(f"🔄 Syncing {repo_path.name} with upstream and origin...")
 
@@ -162,20 +177,14 @@ class GitManager:
 
                 print(f"✓ Successfully synced {repo_path.name}")
 
-                # Allow pinning a repo to a specific commit for debugging/testing
-                # via CE_DEBUG_PIN_<REPO>_COMMIT env var (e.g. CE_DEBUG_PIN_INFRA_COMMIT)
-                repo_name = repo_path.name.upper().replace("-", "_")
-                pin_commit = os.environ.get(f"CE_DEBUG_PIN_{repo_name}_COMMIT")
-                if pin_commit:
-                    self._run_git_command(
-                        ["git", "reset", "--hard", pin_commit], cwd=str(repo_path)
-                    )
-                    logger.warning(f"Debug: pinned {repo_path.name} to {pin_commit}")
+                self._apply_debug_pin(repo_path)
 
             except Exception as e:
                 # If syncing fails, log warning but continue
                 logger.warning(f"Failed to sync with upstream for {repo_path.name}: {e!s}")
                 print(f"⚠️  Warning: Could not fully sync {repo_path.name}: {e}")
+        elif self.dry_run:
+            self._apply_debug_pin(repo_path)
 
         # Check if the branch already exists locally, delete it if so
         try:
@@ -201,6 +210,17 @@ class GitManager:
         except Exception:
             # Branch doesn't exist on origin, create it from main
             self._run_git_command(["git", "checkout", "-b", branch_name], cwd=str(repo_path))
+
+    def _apply_debug_pin(self, repo_path: Path):
+        """Pin a repo to a specific commit for debugging/testing
+
+        Set via CE_DEBUG_PIN_<REPO>_COMMIT env var (e.g. CE_DEBUG_PIN_INFRA_COMMIT)
+        """
+        repo_name = repo_path.name.upper().replace("-", "_")
+        pin_commit = os.environ.get(f"CE_DEBUG_PIN_{repo_name}_COMMIT")
+        if pin_commit:
+            self._run_git_command(["git", "reset", "--hard", pin_commit], cwd=str(repo_path))
+            logger.warning(f"Debug: pinned {repo_path.name} to {pin_commit}")
 
     def get_diff(self, repo_path: Path) -> str:
         """Get the git diff for uncommitted changes"""
@@ -242,6 +262,7 @@ class GitManager:
 
     def push_branch(self, repo_path: Path, branch_name: str, remote_name: str = "origin"):
         """Push branch to remote"""
+        self._ensure_not_dry_run("push")
         if self.github_token:
             # Get the current remote URL
             result = self._run_git_command(
@@ -264,6 +285,7 @@ class GitManager:
         self, upstream_repo: str, branch_name: str, title: str, body: str
     ) -> str:
         """Create a pull request from user's fork to upstream"""
+        self._ensure_not_dry_run("create pull requests")
         if not self.github_client:
             raise ValueError("GitHub token required to create pull requests")
 
