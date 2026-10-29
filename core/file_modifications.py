@@ -98,3 +98,37 @@ def insert_library_properties(content: str, library_props: list[str]) -> str:
         return before + "\n\n" + block + "\n" + content[tools_match.start() :]
     before = content.rstrip("\n")
     return before + "\n\n" + block if before else block
+
+
+def add_version_to_existing_library(
+    content: str, library_id: str, version_key: str, version_props: list[str]
+) -> str | None:
+    """
+    Add a version to a library already in a properties file: append version_key to its
+    `versions=` list and put version_props after the library's last line.
+
+    Returns:
+        The new content, the content unchanged if version_key is already listed, or None
+        if the library has no `versions=` line (it is not in the file yet).
+    """
+    prefix = f"libs.{re.escape(library_id)}"
+    versions_match = re.search(rf"^{prefix}\.versions=(.*)$", content, re.MULTILINE)
+    if not versions_match:
+        return None
+
+    current_versions = versions_match.group(1).strip()
+    if version_key in current_versions.split(":"):
+        return content
+
+    new_versions = f"{current_versions}:{version_key}" if current_versions else version_key
+    content = (
+        content[: versions_match.start()]
+        + f"libs.{library_id}.versions={new_versions}"
+        + content[versions_match.end() :]
+    )
+    last_line = list(re.finditer(rf"^{prefix}\..*$", content, re.MULTILINE))[-1]
+    return (
+        content[: last_line.end()]
+        + "".join(f"\n{p}" for p in version_props)
+        + content[last_line.end() :]
+    )

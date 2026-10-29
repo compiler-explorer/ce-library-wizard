@@ -16,7 +16,7 @@ from .build_tester import (
     run_go_build_test,
 )
 from .constants import GO_PROPERTIES_PATH, LIBRARIES_YAML_PATH, MAIN_REPO_PATH_REQUIRED
-from .file_modifications import insert_library_properties
+from .file_modifications import add_version_to_existing_library, insert_library_properties
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
@@ -607,49 +607,18 @@ class GoHandler:
             library_props.append(f"libs.{library_id}.lookupname={lookupname}")
             library_props.append(f"libs.{library_id}.packagedheaders=true")
             library_props.append(f"libs.{library_id}.versions={version_key}")
-            library_props.append(f"libs.{library_id}.versions.{version_key}.version={version}")
+            version_line = f"libs.{library_id}.versions.{version_key}.version={version}"
+            library_props.append(version_line)
 
-            # Check if this library already has properties
-            lib_pattern = re.compile(rf"^libs\.{re.escape(library_id)}\.", re.MULTILINE)
-            existing_match = lib_pattern.search(content)
-
-            if existing_match:
-                # Library exists - check if we need to add a new version
-                versions_pattern = re.compile(
-                    rf"^libs\.{re.escape(library_id)}\.versions=(.*)$", re.MULTILINE
-                )
-                versions_match = versions_pattern.search(content)
-                if versions_match:
-                    current_versions = versions_match.group(1)
-                    if version_key not in current_versions:
-                        # Add new version key to versions list
-                        new_versions = f"{current_versions}:{version_key}"
-                        content = content.replace(
-                            versions_match.group(0),
-                            f"libs.{library_id}.versions={new_versions}",
-                        )
-
-                        # Add new version entry before the next library or at end of libs section
-                        version_entry = (
-                            f"libs.{library_id}.versions.{version_key}.version={version}"
-                        )
-
-                        # Find the last property line for this library
-                        last_lib_line = None
-                        for match in re.finditer(
-                            rf"^libs\.{re.escape(library_id)}\..*$", content, re.MULTILINE
-                        ):
-                            last_lib_line = match
-
-                        if last_lib_line:
-                            insert_pos = last_lib_line.end()
-                            content = (
-                                content[:insert_pos] + "\n" + version_entry + content[insert_pos:]
-                            )
-                    else:
-                        logger.info(f"Version {version_key} already exists in properties")
-            else:
+            updated = add_version_to_existing_library(
+                content, library_id, version_key, [version_line]
+            )
+            if updated is None:
                 content = insert_library_properties(content, library_props)
+            elif updated == content:
+                logger.info(f"Version {version_key} already exists in properties")
+            else:
+                content = updated
 
             with open(props_file, "w", encoding="utf-8") as f:
                 f.write(content)

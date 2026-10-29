@@ -12,7 +12,7 @@ from .build_tester import (
     run_fortran_build_test,
 )
 from .constants import FORTRAN_PROPERTIES_PATH, GITHUB_URL_REQUIRED, MAIN_REPO_PATH_REQUIRED
-from .file_modifications import insert_library_properties
+from .file_modifications import add_version_to_existing_library, insert_library_properties
 from .library_utils import (
     setup_ce_install as setup_ce_install_shared,
 )
@@ -145,11 +145,16 @@ class FortranHandler:
             library_props.append(f"libs.{library_id}.staticliblink={library_id}")
             library_props.append(f"libs.{library_id}.versions={version_key}")
             library_props.append(f"libs.{library_id}.packagedheaders=true")
-            library_props.append(
-                f"libs.{library_id}.versions.{version_key}.version={config.version}"
-            )
+            version_line = f"libs.{library_id}.versions.{version_key}.version={config.version}"
+            library_props.append(version_line)
 
-            new_content = insert_library_properties(content, library_props)
+            new_content = add_version_to_existing_library(
+                content, library_id, version_key, [version_line]
+            )
+            if new_content is None:
+                new_content = insert_library_properties(content, library_props)
+            elif new_content == content:
+                logger.info(f"Version {version_key} already exists in properties")
 
             with open(props_file, "w", encoding="utf-8") as f:
                 f.write(new_content)
