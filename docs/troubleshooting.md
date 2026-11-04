@@ -235,7 +235,7 @@ If these solutions don't resolve your issue:
    ./run.sh --debug [your options] > debug.log 2>&1
    ```
 
-2. **Create an issue** at: https://github.com/compiler-explorer/ce-lib-wizard/issues
+2. **Create an issue** at: https://github.com/compiler-explorer/ce-library-wizard/issues
    Include:
    - The command you ran
    - The error message
