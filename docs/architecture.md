@@ -9,7 +9,7 @@ CE Library Wizard automates the complex process of adding libraries to Compiler 
 ## Directory Structure
 
 ```
-ce-lib-wizard/
+ce-library-wizard/
 ├── core/                    # Business logic (pure functions, no I/O)
 │   ├── models.py           # Data models (Pydantic)
 │   ├── git_operations.py   # Git repository management

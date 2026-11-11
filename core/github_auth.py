@@ -42,7 +42,7 @@ class GitHubOAuthFlow:
             )
             click.echo("   - Application name: CE Library Wizard", err=True)
             click.echo(
-                "   - Homepage URL: https://github.com/your-username/ce-lib-wizard", err=True
+                "   - Homepage URL: https://github.com/your-username/ce-library-wizard", err=True
             )
             click.echo(f"   - Authorization callback URL: {self.CALLBACK_URL}", err=True)
             click.echo("2. Set the environment variables:", err=True)

@@ -14,8 +14,8 @@ Thank you for your interest in contributing to CE Library Wizard! This guide wil
 
 1. **Fork and clone the repository**
    ```bash
-   gh repo fork compiler-explorer/ce-lib-wizard --clone
-   cd ce-lib-wizard
+   gh repo fork compiler-explorer/ce-library-wizard --clone
+   cd ce-library-wizard
    ```
 
 2. **Install dependencies**

@@ -6,8 +6,8 @@ Get up and running with CE Library Wizard in minutes.
 
 ```bash
 # Clone the repository
-git clone https://github.com/compiler-explorer/ce-lib-wizard.git
-cd ce-lib-wizard
+git clone https://github.com/compiler-explorer/ce-library-wizard.git
+cd ce-library-wizard
 
 # Run the wizard (installs dependencies automatically)
 ./run.sh

@@ -20,7 +20,7 @@ This directory contains detailed documentation for CE Library Wizard.
 ## Quick Links
 
 - [Main README](../README.md) - Project overview
-- [GitHub Issues](https://github.com/compiler-explorer/ce-lib-wizard/issues) - Report bugs or request features
+- [GitHub Issues](https://github.com/compiler-explorer/ce-library-wizard/issues) - Report bugs or request features
 - [Compiler Explorer](https://compiler-explorer.com) - The main Compiler Explorer website
 
 ## Overview
